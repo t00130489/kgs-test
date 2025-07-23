@@ -509,6 +509,10 @@ answerBtn.addEventListener('click',async()=>{
     answerArea.classList.add('hidden');
     answerInput.value = '';
     await remove(ref(db, `rooms/${roomId}/buzz`));
+    // 問題タイマーを再開（他の人の早押し待ち状態に戻す）
+    if (flowStarted) {
+      window._qInt = setInterval(tickQ, 100);
+    }
   }
 });
 
