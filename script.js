@@ -98,14 +98,18 @@ quizAppDiv.insertBefore(questionLabelEl, preCd);
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
 
-// フィードバック表示
+// フィードバック表示（アニメーションをスムーズに）
 function showFeedback(isCorrect) {
   feedbackOverlay.textContent = isCorrect ? '〇' : '×';
-  feedbackOverlay.classList.remove('hidden', 'correct', 'wrong');
-  feedbackOverlay.classList.add(isCorrect ? 'correct' : 'wrong');
+  feedbackOverlay.classList.remove('hidden', 'correct', 'wrong', 'animating');
+  // 強制再描画でアニメーションリセット
+  void feedbackOverlay.offsetWidth;
+  feedbackOverlay.classList.add(isCorrect ? 'correct' : 'wrong', 'animating');
+  feedbackOverlay.classList.remove('hidden');
   setTimeout(() => {
+    feedbackOverlay.classList.remove('animating');
     feedbackOverlay.classList.add('hidden');
-  }, 800);
+  }, 700);
 }
 
 // 状態変数
@@ -416,8 +420,12 @@ function startAnswerTimer(){
 }
 
 // 早押しボタン処理（トランザクション＋楽観的UI反映）
-buzzBtn.addEventListener('click', async () => {
+buzzBtn.addEventListener('click', async (e) => {
   if (!canBuzz()) return;
+  // リップルエフェクト
+  createRipple(e);
+  // バイブレーション
+  if (window.navigator.vibrate) window.navigator.vibrate(50);
   clearInterval(window._qInt);
   pauseTypewriter();
 
@@ -454,6 +462,24 @@ buzzBtn.addEventListener('click', async () => {
     // 成功時はwatchBuzzでUI確定
   });
 });
+
+// リップルエフェクト生成
+function createRipple(e) {
+  const btn = buzzBtn;
+  let ripple = btn.querySelector('.ripple');
+  if (ripple) ripple.remove();
+  ripple = document.createElement('span');
+  ripple.className = 'ripple';
+  const rect = btn.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  ripple.style.width = ripple.style.height = size + 'px';
+  const x = e.clientX - rect.left - size / 2;
+  const y = e.clientY - rect.top - size / 2;
+  ripple.style.left = x + 'px';
+  ripple.style.top = y + 'px';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 600);
+}
 
 // 解答提出
 answerBtn.addEventListener('click',async()=>{
