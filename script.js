@@ -111,6 +111,7 @@ nicknameModal.id = 'nickname-modal';
 nicknameModal.style = `
   position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2000;
   background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center;
+  overflow: auto;
 `;
 nicknameModal.innerHTML = `
   <div style="background: #fff; border-radius: 12px; padding: 2rem 1.5rem; min-width: 280px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); text-align: center;">
@@ -131,7 +132,15 @@ function showNicknameModal() {
     const cancelBtn = modal.querySelector('#nickname-cancel');
     modal.style.display = 'flex';
     input.value = '';
-    input.focus();
+    setTimeout(() => {
+      input.focus();
+      // スマホで中央にスクロール
+      if (window.innerWidth <= 600) {
+        setTimeout(() => {
+          input.scrollIntoView({behavior:'smooth', block:'center'});
+        }, 300);
+      }
+    }, 50);
     function close(val) {
       modal.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
@@ -319,8 +328,15 @@ function watchEvents(){
       statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
       flowStarted = true;
       questionStart = ev.timestamp;
+      // タイプライター式の問題文表示を再開
+      currentText = sequence[idx].question;
+      // 途中まで表示されている場合はその続きから再開
+      if (questionEl.textContent.length < currentText.length) {
+        typePos = questionEl.textContent.length;
+        resumeTypewriter();
+      }
       window._qInt = setInterval(tickQ,100);
-      resumeTypewriter(); updateBuzzState();
+      updateBuzzState();
     }
   });
 }
@@ -480,14 +496,43 @@ function startPreCountdown(startTs){
 
 // タイプ制御
 let typePos=0, currentText='';
+// タイプ進捗をDBで同期
+let typeSyncRef = null;
 function showQuestion(){
-  currentText=sequence[idx].question; typePos=0;
-  questionEl.textContent=''; questionEl.style.visibility='visible';
+  currentText = sequence[idx].question; typePos = 0;
+  questionEl.textContent = '';
+  questionEl.style.visibility = 'visible';
   clearInterval(window._typeInt);
-  window._typeInt=setInterval(()=>{
-    if(typePos<currentText.length) questionEl.textContent+=currentText[typePos++];
-    else clearInterval(window._typeInt);
+  // タイプ進捗同期用リファレンス
+  if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
+  typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
+  // ホストが進捗を送信
+  let lastTypePos = 0;
+  window._typeInt = setInterval(() => {
+    if (typePos < currentText.length) {
+      questionEl.textContent += currentText[typePos++];
+      // 進捗をDBに反映（1文字進むごと）
+      if (myNick === Object.keys(players)[0]) { // ホストのみ書き込み
+        if (typePos > lastTypePos) {
+          set(typeSyncRef, typePos);
+          lastTypePos = typePos;
+        }
+      }
+    } else {
+      clearInterval(window._typeInt);
+    }
   }, TEXT.typeSpeed);
+  // 参加者は進捗を監視
+  if (myNick !== Object.keys(players)[0]) {
+    onValue(typeSyncRef, snap => {
+      const synced = snap.val() || 0;
+      if (synced > typePos && typePos < currentText.length) {
+        // 足りない分を一気に表示
+        questionEl.textContent += currentText.slice(typePos, synced);
+        typePos = synced;
+      }
+    });
+  }
   currentNum.textContent=idx+1;
   clearInterval(window._qInt); qTimerEl.style.display='block';
   questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit;
@@ -496,9 +541,22 @@ function showQuestion(){
 function pauseTypewriter(){ clearInterval(window._typeInt); }
 function resumeTypewriter(){
   clearInterval(window._typeInt);
-  window._typeInt=setInterval(()=>{
-    if(typePos<currentText.length) questionEl.textContent+=currentText[typePos++];
-    else clearInterval(window._typeInt);
+  // 表示済みの長さから再開するためtypePosを再取得
+  typePos = questionEl.textContent.length;
+  let lastTypePos = typePos;
+  window._typeInt = setInterval(() => {
+    if (typePos < currentText.length) {
+      questionEl.textContent += currentText[typePos++];
+      // ホストは進捗をDBに反映
+      if (myNick === Object.keys(players)[0]) {
+        if (typePos > lastTypePos) {
+          set(typeSyncRef, typePos);
+          lastTypePos = typePos;
+        }
+      }
+    } else {
+      clearInterval(window._typeInt);
+    }
   }, TEXT.typeSpeed);
 }
 
@@ -570,6 +628,12 @@ buzzBtn.addEventListener('click', async (e) => {
       // 成功時はwatchBuzzでUI確定。スマホで自動的に回答欄を選択
       setTimeout(() => {
         if (document.activeElement !== answerInput) answerInput.focus();
+        // スマホで回答欄を中央にスクロール
+        if (window.innerWidth <= 600) {
+          setTimeout(() => {
+            answerInput.scrollIntoView({behavior:'smooth', block:'center'});
+          }, 300);
+        }
       }, 100);
     }
   });
