@@ -1,6 +1,7 @@
 .question-card #question-timer.show-answer {
   font-size: 1.2rem;
   margin-top: 0.2em;
+  color: var(--danger);
 }
 /* 問題カードブロック（問題番号・本文・タイマーをまとめて高さ固定） */
 .question-card {
