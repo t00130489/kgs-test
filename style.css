@@ -1,3 +1,70 @@
+/* 問題カードブロック（問題番号・本文・タイマーをまとめて高さ固定） */
+.question-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  margin: -1rem 0 0.4rem 0;
+  padding: 1.2rem 1.2rem 1.2rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 13em;
+  height: 13em;
+  max-width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  position: relative;
+}
+.question-card #question-label {
+  margin-bottom: 0.05em;
+  font-size: 1.2rem;
+  text-align: left;
+  font-weight: bold;
+  margin-top: -0.4em;
+}
+.question-card-center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 7em;
+  position: relative;
+}
+.question-card #pre-countdown {
+  align-self: center;
+  font-size: 5rem;
+  color: var(--danger);
+  text-align: center;
+  margin: 0.2em 0 0.1em 0;
+  font-weight: bold;
+  min-height: 2.2em;
+  position: relative;
+  top: -0.2em;
+}
+.question-card #question {
+  font-size: 1.2rem;
+  margin: 0.5em 0 0.5em 0;
+  line-height: 1.6;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  min-height: 3.2em;
+  max-height: 5.5em;
+  display: block;
+  text-align: left !important;
+}
+.question-card #question-timer {
+  text-align: left;
+  margin-top: 1em;
+  margin-bottom: 0;
+  font-weight: normal;
+}
+.buzz-btn {
+  margin: 0.5rem 0 0.5rem 0 !important;
+}
+#nextBtn {
+  margin-top: 0.5rem !important;
+}
 .main-title {
   display: flex;
   align-items: center;
@@ -233,7 +300,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   padding: 0.75rem 1rem;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
-.info-bar + .info-bar { margin-top: 1rem; }
+.info-bar + .info-bar { margin-top: 0.5rem; }
 .room-info { display: flex; align-items: center; }
 .room-info .gap { flex: 1; }
 

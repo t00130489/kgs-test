@@ -91,7 +91,7 @@
         <span class="gap"></span>
         <span>参加者： <ul id="players" class="highlight inline-list"></ul></span>
       </div>
-      <div class="info-bar quiz-settings">
+      <div class="info-bar quiz-settings" style="margin-bottom:0.4rem;">
         <span>出題範囲： <strong id="room-range" class="highlight"></strong></span><br>
         <span>問題数： <strong id="currentNum" class="highlight">0</strong>/<strong id="totalNum" class="highlight">0</strong></span>
       </div>
@@ -99,11 +99,16 @@
         <button id="startBtn" class="btn-primary large">問題スタート</button>
       </div>
 
-      <div id="pre-countdown" class="countdown"></div>
-      <div id="question-label" class="question-label"></div>
-      <div id="question" class="question"></div>
-      <div id="question-timer" class="timer"></div>
+      <div class="question-card hidden" id="question-card-block">
+        <div id="question-label" class="question-label"></div>
+        <div class="question-card-center">
+          <div id="pre-countdown" class="countdown"></div>
+          <div id="question" class="question"></div>
+        </div>
+        <div id="question-timer" class="timer"></div>
+      </div>
 
+      <div style="height:0.4em;"></div>
       <button id="buzzBtn" class="buzz-btn">早押し！</button>
       <div id="status" class="status"></div>
 

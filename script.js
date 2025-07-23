@@ -167,11 +167,9 @@ function showNicknameModal() {
 }
 
 // 「第〇問」ラベル
-const questionLabelEl = document.createElement('div');
-questionLabelEl.id = 'questionLabel';
-questionLabelEl.className = 'question-label';
-questionLabelEl.style.visibility = 'hidden';
-quizAppDiv.insertBefore(questionLabelEl, preCd);
+const questionLabelEl = document.getElementById('question-label');
+const questionCardBlock = document.getElementById('question-card-block');
+// questionElは既に上部で宣言済みなので再宣言しない
 
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
@@ -500,8 +498,13 @@ function startPreCountdown(startTs){
   clearTimers(); flowStarted=false; answered=false;
   statusEl.textContent=''; answerArea.classList.add('hidden'); answerInput.value='';
   qTimerEl.style.display='none'; aTimerEl.style.display='none'; questionEl.style.visibility='hidden';
+  // カードブロックを表示、ラベル・カウントダウンをセット
+  questionCardBlock.classList.remove('hidden');
   questionLabelEl.style.visibility='visible';
-  questionLabelEl.textContent=`${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
+  questionLabelEl.textContent = `${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
+  document.getElementById('pre-countdown').style.display = 'block';
+  document.getElementById('question').style.display = 'none';
+  document.getElementById('question-timer').style.display = 'none';
   nextBtn.disabled=true;
   // キャプションを消す
   // キャプションとラップを消す
@@ -542,6 +545,11 @@ function showQuestion(){
   currentText = sequence[idx].question; typePos = 0;
   questionEl.textContent = '';
   questionEl.style.visibility = 'visible';
+  // カードブロックを表示、カウントダウン非表示、問題文・タイマー表示
+  questionCardBlock.classList.remove('hidden');
+  document.getElementById('pre-countdown').style.display = 'none';
+  document.getElementById('question').style.display = 'block';
+  document.getElementById('question-timer').style.display = 'block';
   clearInterval(window._typeInt);
   // タイプ進捗同期用リファレンス
   if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
