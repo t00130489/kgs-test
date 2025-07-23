@@ -436,7 +436,12 @@ buzzBtn.addEventListener('click', async () => {
   }).then(result => {
     if (!result.committed) {
       // 失敗時ロールバック
-      statusEl.textContent = '誰か先に押しました…';
+      // 先に押した人の名前を取得して表示
+      get(buzzRef).then(snap => {
+        const buzzData = snap.val();
+        const who = buzzData && buzzData.nick ? buzzData.nick : '誰か';
+        statusEl.textContent = `${who} さんが先に押しました…`;
+      });
       // 回答欄・ボタン・タイマーを非表示にし、状態をリセット
       answerArea.classList.add('hidden');
       answerBtn.disabled = true;
