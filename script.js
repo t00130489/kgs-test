@@ -173,8 +173,11 @@ gradCb.addEventListener('change', ()=>{ chapterCbs.forEach(cb=>{ if(['0','1','4'
 allCb.addEventListener('change', ()=>{ chapterCbs.forEach(cb=>cb.checked=allCb.checked); updateCreateBtn(); });
 chapterCbs.forEach(cb=>cb.addEventListener('change',updateCreateBtn));
 
-// 問題ロード
-onValue(ref(db,'questions'), snap=>{ quizData = Object.values(snap.val()||{}).filter(x=>x); updateCreateBtn(); });
+// 問題ロード（最初だけ取得、以降は監視しない）
+get(ref(db,'questions')).then(snap => {
+  quizData = Object.values(snap.val()||{}).filter(x=>x);
+  updateCreateBtn();
+});
 
 // ウォッチャー
 function watchPlayers(){
@@ -316,6 +319,20 @@ startBtn.addEventListener('click',async()=>{
   const now=getServerTime(); await set(ref(db,`rooms/${roomId}/settings/preStart`),now);
 });
 
+// ローカルで残り秒数を先行描画
+function updateLocalCountdown(startTs) {
+  const tick = () => {
+    const rem = TEXT.preCountdownSec - Math.floor((getServerTime() - startTs) / 1000);
+    if (rem > 0) preCd.textContent = rem;
+    else {
+      clearInterval(window._preInt);
+      preCd.textContent = '';
+    }
+  };
+  tick();
+  window._preInt = setInterval(tick, 200);
+}
+
 function startPreCountdown(startTs){
   clearTimers(); flowStarted=false; answered=false;
   statusEl.textContent=''; answerArea.classList.add('hidden'); answerInput.value='';
@@ -323,15 +340,30 @@ function startPreCountdown(startTs){
   questionLabelEl.style.visibility='visible';
   questionLabelEl.textContent=`${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
   nextBtn.disabled=true;
-  const tick=()=>{
-    const rem=TEXT.preCountdownSec-Math.floor((getServerTime()-startTs)/1000);
-    if(rem>0) preCd.textContent=rem;
-    else {
-      clearInterval(window._preInt); preCd.textContent='';
-      questionStart=startTs+TEXT.preCountdownSec*1000; flowStarted=true; showQuestion();
+  // まずローカルで先行描画
+  const localStartTs = getServerTime();
+  updateLocalCountdown(localStartTs);
+  // DBイベント到着で正確なstartTsに調整
+  onValue(ref(db,`rooms/${roomId}/settings/preStart`), snap => {
+    const dbStartTs = snap.val();
+    if (dbStartTs) {
+      clearInterval(window._preInt);
+      // 正確なタイミングで再カウント
+      const tick = () => {
+        const rem = TEXT.preCountdownSec - Math.floor((getServerTime() - dbStartTs) / 1000);
+        if (rem > 0) preCd.textContent = rem;
+        else {
+          clearInterval(window._preInt);
+          preCd.textContent = '';
+          questionStart = dbStartTs + TEXT.preCountdownSec * 1000;
+          flowStarted = true;
+          showQuestion();
+        }
+      };
+      tick();
+      window._preInt = setInterval(tick, 200);
     }
-  };
-  tick(); window._preInt=setInterval(tick,200);
+  }, { onlyOnce: true });
 }
 
 // タイプ制御
@@ -383,23 +415,30 @@ function startAnswerTimer(){
   },1000);
 }
 
-// 早押しボタン処理（トランザクションで書き込み）
+// 早押しボタン処理（トランザクション＋楽観的UI反映）
 buzzBtn.addEventListener('click', async () => {
   if (!canBuzz()) return;
   clearInterval(window._qInt);
   pauseTypewriter();
 
+  // 楽観的UI反映
+  statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
+
   const buzzRef = ref(db, `rooms/${roomId}/buzz`);
   await runTransaction(buzzRef, current => {
-    // current === null のときだけ「初回書き込み」を許可
     if (current === null) {
       return {
         nick: myNick,
         time: getServerTime()
       };
     }
-    // すでに誰か書き込んでいたら何もしない（トランザクション中止）
     return;
+  }).then(result => {
+    if (!result.committed) {
+      // 失敗時ロールバック
+      statusEl.textContent = '誰か先に押しました…';
+    }
+    // 成功時はwatchBuzzでUI確定
   });
 });
 
