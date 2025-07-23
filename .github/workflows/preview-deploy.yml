@@ -1,0 +1,33 @@
+name: Manual Preview Deploy to Firebase Hosting
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preview-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. リポジトリをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Node.js のセットアップ（Firebase CLI 動作のため）
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # 3. Firebase CLI をグローバルインストール
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      # 4. 「preview」チャンネルにデプロイ（プレビュー用URLを発行）
+      - name: Deploy to Preview Channel
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase hosting:channel:deploy preview \
+            --expires 7d \
+            --only hosting \
+            --token $FIREBASE_TOKEN
