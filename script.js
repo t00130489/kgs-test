@@ -88,6 +88,75 @@ const aTimerEl    = document.getElementById('answer-timer');
 const nextBtn     = document.getElementById('nextBtn');
 const startBtn    = document.getElementById('startBtn');
 
+// ホスト用キャプション
+const hostCaption = document.createElement('div');
+hostCaption.id = 'host-caption';
+hostCaption.textContent = '参加者が揃ったら問題スタート！';
+hostCaption.style = 'color:#222; font-size:0.95rem; margin-top:1.2rem; margin-bottom:1.2rem; text-align:center; display:block;';
+
+// ホスト用キャプションとボタンを縦並び中央揃えでラップするdiv
+const hostWrap = document.createElement('div');
+hostWrap.id = 'host-caption-wrap';
+hostWrap.style = 'display:flex; flex-direction:column; align-items:center; width:100%;';
+
+// 参加者用キャプション
+const waitCaption = document.createElement('div');
+waitCaption.id = 'wait-caption';
+waitCaption.textContent = 'ルームホストが問題をスタートするのを待っています...';
+waitCaption.style = 'color:#222; font-size:0.95rem; margin-bottom:12rem; text-align:center;';
+
+// ニックネーム入力モーダル生成
+const nicknameModal = document.createElement('div');
+nicknameModal.id = 'nickname-modal';
+nicknameModal.style = `
+  position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2000;
+  background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center;
+`;
+nicknameModal.innerHTML = `
+  <div style="background: #fff; border-radius: 12px; padding: 2rem 1.5rem; min-width: 280px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); text-align: center;">
+    <div style="font-size: 1.1rem; margin-bottom: 1rem;">あなたのニックネームを入力してください</div>
+    <input id="nickname-input" type="text" maxlength="15" style="width: 90%; font-size: 1.1rem; padding: 0.5rem; border-radius: 6px; border: 1px solid #ccc; margin-bottom: 1.2rem;" autocomplete="off">
+    <br>
+    <button id="nickname-ok" class="btn-primary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; margin-right: 1.2rem;">OK</button>
+    <button id="nickname-cancel" class="btn-secondary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; background: #e0e0e0; color: #555; border: 1px solid #ccc;">キャンセル</button>
+  </div>
+`;
+document.body.appendChild(nicknameModal);
+
+function showNicknameModal() {
+  return new Promise(resolve => {
+    const modal = nicknameModal;
+    const input = modal.querySelector('#nickname-input');
+    const okBtn = modal.querySelector('#nickname-ok');
+    const cancelBtn = modal.querySelector('#nickname-cancel');
+    modal.style.display = 'flex';
+    input.value = '';
+    input.focus();
+    function close(val) {
+      modal.style.display = 'none';
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onOk() {
+      const val = input.value.trim();
+      if(val) close(val);
+      else input.focus();
+    }
+    function onCancel() {
+      close(null);
+    }
+    function onKey(e) {
+      if(e.key==='Enter') onOk();
+      if(e.key==='Escape') onCancel();
+    }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
 // 「第〇問」ラベル
 const questionLabelEl = document.createElement('div');
 questionLabelEl.id = 'questionLabel';
@@ -294,7 +363,8 @@ createBtn.addEventListener('click',async()=>{
   const chs=[...chapterCbs].filter(cb=>cb.checked).map(cb=>+cb.value);
   const cnt=parseInt(roomCount.value,10);
   if(!chs.length||cnt<1){ alert('範囲と数を指定'); return; }
-  const nick=prompt('ニックネーム（ルームホスト）'); if(!nick) return;
+  const nick = await showNicknameModal();
+  if(!nick) return;
   myNick=nick; joinTs=getServerTime(); roomId=await genId();
   await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,createdAt:getServerTime()});
   sequence=quizData.filter(q=>chs.includes(+q.chapter)).sort(()=>Math.random()-.5).slice(0,cnt);
@@ -303,6 +373,21 @@ createBtn.addEventListener('click',async()=>{
   await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
   currentRoom.textContent=roomId; startBtn.style.display='block';
+  // ホスト用キャプションとボタンを縦並び中央揃えでラップ
+  let wrap = document.getElementById('host-caption-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'host-caption-wrap';
+    wrap.style = 'display:flex; flex-direction:column; align-items:center; width:100%';
+    startBtn.parentNode.insertBefore(wrap, startBtn);
+  }
+  // 必ずキャプション→ボタンの順でラップ内に配置
+  if (!wrap.contains(hostCaption)) wrap.appendChild(hostCaption);
+  if (!wrap.contains(startBtn)) wrap.appendChild(startBtn);
+  // 参加者用キャプションは消す
+  if (document.getElementById('wait-caption')) {
+    waitCaption.remove();
+  }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
   watchEvents(); watchBuzz(); watchPreStart();
@@ -312,11 +397,25 @@ createBtn.addEventListener('click',async()=>{
 joinRoomBtn.addEventListener('click',async()=>{
   const inputId=roomIdInput.value.trim(); if(!inputId){ alert('ルームIDを入力してください'); return; }
   const snap=await get(child(ref(db,'rooms'),inputId)); if(!snap.exists()){ alert('ルームが存在しません'); return; }
-  roomId=inputId; const nick=prompt('ニックネーム'); if(!nick) return;
+  roomId=inputId;
+  const nick = await showNicknameModal();
+  if(!nick) return;
   myNick=nick; joinTs=getServerTime();
   await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
   currentRoom.textContent=roomId;
+  // 早押しボタンの上に参加者用キャプションを挿入
+  if (!document.getElementById('wait-caption')) {
+    buzzBtn.parentNode.insertBefore(waitCaption, buzzBtn);
+  }
+  // ホスト用キャプションは消す
+  // ホスト用キャプションとラップは消す
+  if (document.getElementById('host-caption')) {
+    hostCaption.remove();
+  }
+  if (document.getElementById('host-caption-wrap')) {
+    document.getElementById('host-caption-wrap').remove();
+  }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
   watchEvents(); watchBuzz(); watchPreStart();
@@ -348,6 +447,11 @@ function startPreCountdown(startTs){
   questionLabelEl.style.visibility='visible';
   questionLabelEl.textContent=`${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
   nextBtn.disabled=true;
+  // キャプションを消す
+  // キャプションとラップを消す
+  if (document.getElementById('host-caption')) hostCaption.remove();
+  if (document.getElementById('host-caption-wrap')) document.getElementById('host-caption-wrap').remove();
+  if (document.getElementById('wait-caption')) waitCaption.remove();
   // まずローカルで先行描画
   const localStartTs = getServerTime();
   updateLocalCountdown(localStartTs);
