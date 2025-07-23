@@ -106,6 +106,10 @@ function showFeedback(isCorrect) {
   void feedbackOverlay.offsetWidth;
   feedbackOverlay.classList.add(isCorrect ? 'correct' : 'wrong', 'animating');
   feedbackOverlay.classList.remove('hidden');
+  // 触覚フィードバック
+  if (window.navigator.vibrate) {
+    window.navigator.vibrate(isCorrect ? [30, 30, 30] : [80, 40, 80]);
+  }
   setTimeout(() => {
     feedbackOverlay.classList.remove('animating');
     feedbackOverlay.classList.add('hidden');
@@ -458,8 +462,12 @@ buzzBtn.addEventListener('click', async (e) => {
       // 早押し未参加状態に戻す
       answered = false;
       // タイムアップ誤答等の処理は行わない
+    } else {
+      // 成功時はwatchBuzzでUI確定。スマホで自動的に回答欄を選択
+      setTimeout(() => {
+        if (document.activeElement !== answerInput) answerInput.focus();
+      }, 100);
     }
-    // 成功時はwatchBuzzでUI確定
   });
 });
 
