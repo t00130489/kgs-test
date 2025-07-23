@@ -1,3 +1,25 @@
+.main-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.main-title .main-icon {
+  height: 1em;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+}
+/* バージョン情報表示用 */
+.version-info {
+  text-align: right;
+  color: #222;
+  opacity: 0.55;
+  font-size: 0.92rem;
+  margin-top: 0.7em;
+  margin-bottom: -0.5em;
+  width: 100%;
+  letter-spacing: 0.01em;
+}
 /* リップルエフェクト for buzzBtn */
 .buzz-btn {
   position: relative;

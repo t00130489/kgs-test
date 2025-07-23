@@ -713,7 +713,9 @@ function createRipple(e) {
 }
 
 // 解答提出
-answerBtn.addEventListener('click',async()=>{
+
+// 解答ボタンのクリック・Enter対応
+async function submitAnswer() {
   answerBtn.disabled = true;
   const guess = answerInput.value.trim();
   if (!guess) { alert('回答を入力してください'); answerBtn.disabled = false; return; }
@@ -771,6 +773,12 @@ answerBtn.addEventListener('click',async()=>{
     if (flowStarted) {
       window._qInt = setInterval(tickQ, 100);
     }
+  }
+}
+answerBtn.addEventListener('click', submitAnswer);
+answerInput.addEventListener('keydown', function(e) {
+  if (!answerBtn.disabled && (e.key === 'Enter')) {
+    submitAnswer();
   }
 });
 
@@ -842,12 +850,7 @@ async function showResults(){
   });
 }
 
-// フッターのバージョン表記を追加
-const footer = document.createElement('div');
-footer.id = 'footer-version';
-footer.textContent = 'v2507241';
-footer.style = 'position:fixed; right:0.7em; bottom:0.4em; font-size:0.92rem; color:#222; opacity:0.55; z-index:100; pointer-events:none; user-select:none;';
-document.body.appendChild(footer);
+
 
 // 離脱後削除
 window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${myNick}`)); });
