@@ -62,17 +62,21 @@ header {
 .main-title {
   position: relative;
   display: inline-block;
-  font-size: 2.1rem;
   color: var(--primary);
   margin: 0;
   line-height: 1.08;
   padding-bottom: 0.2em;
+  font-size: clamp(1.1rem, 6vw, 2.1rem);
+  max-width: 100vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .main-title .version {
   position: absolute;
   right: -2.1em;
   bottom: -0.15em;
-  font-size: 0.75rem;
+  font-size: 0.75em;
   color: #555;
   font-weight: 300;
   margin: 0;
@@ -124,6 +128,18 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-secondary { background: var(--secondary); color: #fff; }
 .btn-primary.small { padding: 0.6rem 1rem; font-size: 1rem; }
 .btn-primary.large { padding: 1.2rem 2rem; font-size: 1.6rem; }
+.btn-danger {
+  background: #e53935 !important;
+  color: #fff !important;
+  border: 1.5px solid #b71c1c !important;
+  box-shadow: 0 2px 8px rgba(229,57,53,0.12);
+  font-weight: bold;
+  transition: background 0.2s;
+}
+.btn-danger:hover, .btn-danger:active {
+  background: #b71c1c !important;
+  color: #fff !important;
+}
 
 .countdown, .timer { font-weight: bold; }
 #pre-countdown {

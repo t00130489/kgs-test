@@ -14,10 +14,21 @@
 
     gtag('config', 'G-QEP0467K9D');
   </script>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1976d2">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js');
+      });
+    }
+  </script>
 </head>
 <body>
   <header>
-    <h1 class="main-title">興学思想 早押しクイズバトル<span class="version">v20250723</span></h1>
+    <h1 class="main-title">興学思想 早押しクイズバトル</h1>
   </header>
 
   <main>

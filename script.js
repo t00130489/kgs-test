@@ -201,6 +201,8 @@ let players = {}, scores = {}, wrongs = {};
 let flowStarted = false, answered = false;
 let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
 const allEvents = [];
+let nextBtnCountdownTimer = null;
+let nextBtnCountdownRemain = 0;
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -208,6 +210,28 @@ function clearTimers(){
   clearInterval(window._qInt);
   clearInterval(window._aInt);
   clearInterval(window._typeInt);
+  clearNextBtnCountdown();
+}
+function clearNextBtnCountdown() {
+  if (nextBtnCountdownTimer) {
+    clearInterval(nextBtnCountdownTimer);
+    nextBtnCountdownTimer = null;
+    nextBtnCountdownRemain = 0;
+    // ボタンのラベルを元に戻す
+    if (nextBtn) {
+      const isFinal = idx+1>=sequence.length;
+      nextBtn.textContent = isFinal ? TEXT.labels.finalResult : TEXT.labels.nextQuestion;
+      nextBtn.style.minWidth = '';
+      // ボタン色リセット
+      if (isFinal) {
+        nextBtn.classList.add('btn-danger');
+        nextBtn.classList.remove('btn-primary');
+      } else {
+        nextBtn.classList.remove('btn-danger');
+        nextBtn.classList.add('btn-primary');
+      }
+    }
+  }
 }
 function canBuzz(){ return flowStarted && !answered && !wrongs[myNick]; }
 function updateBuzzState(){
@@ -242,6 +266,7 @@ function onQuestionTimeout(){
   qTimerEl.style.display = 'none';
   aTimerEl.style.display = 'none';
   nextBtn.disabled = false;
+  startNextBtnCountdown();
   remove(ref(db, `rooms/${roomId}/buzz`));
 }
 
@@ -290,6 +315,7 @@ function watchWrongs(){
       qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
       answerArea.classList.add('hidden'); buzzBtn.disabled = true;
       nextBtn.disabled = false; remove(ref(db,`rooms/${roomId}/buzz`));
+      startNextBtnCountdown();
     }
     updateBuzzState();
   });
@@ -322,6 +348,7 @@ function watchEvents(){
       statusEl.textContent = `${ev.nick} さんが正解！🎉 正解： ${ev.answer}`;
       qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
       nextBtn.disabled = false; updateBuzzState();
+      startNextBtnCountdown();
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       clearTimers();
       const disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
@@ -585,6 +612,34 @@ function startAnswerTimer(){
   },1000);
 }
 
+// 次の問題へボタンのカウントダウン＆自動遷移
+function startNextBtnCountdown() {
+  clearNextBtnCountdown();
+  nextBtnCountdownRemain = 5;
+  const isFinal = idx+1>=sequence.length;
+  const origLabel = isFinal ? TEXT.labels.finalResult : TEXT.labels.nextQuestion;
+  nextBtn.textContent = `${origLabel}（${nextBtnCountdownRemain}）`;
+  nextBtn.style.minWidth = '8.5em';
+  // ボタン色切り替え
+  if (isFinal) {
+    nextBtn.classList.add('btn-danger');
+    nextBtn.classList.remove('btn-primary');
+  } else {
+    nextBtn.classList.remove('btn-danger');
+    nextBtn.classList.add('btn-primary');
+  }
+  nextBtnCountdownTimer = setInterval(() => {
+    nextBtnCountdownRemain--;
+    if (nextBtnCountdownRemain > 0) {
+      nextBtn.textContent = `${origLabel}（${nextBtnCountdownRemain}）`;
+    } else {
+      clearNextBtnCountdown();
+      // 自動でボタン押下処理
+      if (!nextBtn.disabled) nextBtn.click();
+    }
+  }, 1000);
+}
+
 // 早押しボタン処理（トランザクション＋楽観的UI反映）
 buzzBtn.addEventListener('click', async (e) => {
   if (!canBuzz()) return;
@@ -704,6 +759,7 @@ answerBtn.addEventListener('click',async()=>{
 
     await remove(ref(db, `rooms/${roomId}/buzz`));
     updateBuzzState();
+    startNextBtnCountdown();
   } else {
     // 誤答処理
     clearTimers();
@@ -719,15 +775,19 @@ answerBtn.addEventListener('click',async()=>{
 });
 
 // 次へ
-nextBtn.addEventListener('click',async()=>{
-  if(nextBtn.disabled) return;
+nextBtn.addEventListener('click', async () => {
+  if (nextBtn.disabled) return;
+  clearNextBtnCountdown();
   clearTimers();
-  questionEl.textContent=''; questionEl.style.visibility='hidden';
-  statusEl.textContent=''; qTimerEl.style.display='none'; aTimerEl.style.display='none';
-  questionLabelEl.style.visibility='hidden';
-  if(idx+1<sequence.length){
-    await set(ref(db,`rooms/${roomId}/currentIndex`),idx+1);
-    await set(ref(db,`rooms/${roomId}/settings/preStart`),getServerTime());
+  questionEl.textContent = '';
+  questionEl.style.visibility = 'hidden';
+  statusEl.textContent = '';
+  qTimerEl.style.display = 'none';
+  aTimerEl.style.display = 'none';
+  questionLabelEl.style.visibility = 'hidden';
+  if (idx + 1 < sequence.length) {
+    await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
+    await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
   } else {
     showResults();
   }
@@ -781,6 +841,13 @@ async function showResults(){
     location.reload();
   });
 }
+
+// フッターのバージョン表記を追加
+const footer = document.createElement('div');
+footer.id = 'footer-version';
+footer.textContent = 'v2507241';
+footer.style = 'position:fixed; right:0.7em; bottom:0.4em; font-size:0.92rem; color:#222; opacity:0.55; z-index:100; pointer-events:none; user-select:none;';
+document.body.appendChild(footer);
 
 // 離脱後削除
 window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${myNick}`)); });
