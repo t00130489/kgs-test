@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>興学思想テスト 早押しクイズ</title>
+  <title>興学思想テスト早押しクイズバトル</title>
   <link rel="stylesheet" href="style.css">
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEP0467K9D"></script>
@@ -14,10 +14,21 @@
 
     gtag('config', 'G-QEP0467K9D');
   </script>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1976d2">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js');
+      });
+    }
+  </script>
 </head>
 <body>
   <header>
-    <h1>興学思想早押しクイズ <span class="version">v20250723</span></h1>
+    <h1 class="main-title"><img src="icon-k.png" alt="K" class="main-icon">興学思想 早押しクイズバトル</h1>
   </header>
 
   <main>
@@ -42,7 +53,7 @@
         </div>
         <div class="form-row">
           <label><span class="range-label">出題問題数：</span>
-            <input type="number" id="room-count" value="20" min="1" max="999">
+            <input type="number" id="room-count" value="10" min="1" max="999">
           </label>
         </div>
         <button id="createBtn" class="btn-primary">ルーム作成</button>
@@ -69,6 +80,7 @@
           <li>全ての問題が終了したら、結果画面でスコアと問題の内容を確認できます。</li>
         </ol>
         <p>このクイズは試作版なのでバグもあります。何かあったら教えてください。<br>PKG南大沢校　髙橋悠並</p>
+        <div class="version-info">v2507241</div>
       </section>
     </section>
 

@@ -111,6 +111,7 @@ nicknameModal.id = 'nickname-modal';
 nicknameModal.style = `
   position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2000;
   background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center;
+  overflow: auto;
 `;
 nicknameModal.innerHTML = `
   <div style="background: #fff; border-radius: 12px; padding: 2rem 1.5rem; min-width: 280px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); text-align: center;">
@@ -131,7 +132,15 @@ function showNicknameModal() {
     const cancelBtn = modal.querySelector('#nickname-cancel');
     modal.style.display = 'flex';
     input.value = '';
-    input.focus();
+    setTimeout(() => {
+      input.focus();
+      // スマホで中央にスクロール
+      if (window.innerWidth <= 600) {
+        setTimeout(() => {
+          input.scrollIntoView({behavior:'smooth', block:'center'});
+        }, 300);
+      }
+    }, 50);
     function close(val) {
       modal.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
@@ -192,6 +201,8 @@ let players = {}, scores = {}, wrongs = {};
 let flowStarted = false, answered = false;
 let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
 const allEvents = [];
+let nextBtnCountdownTimer = null;
+let nextBtnCountdownRemain = 0;
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -199,6 +210,28 @@ function clearTimers(){
   clearInterval(window._qInt);
   clearInterval(window._aInt);
   clearInterval(window._typeInt);
+  clearNextBtnCountdown();
+}
+function clearNextBtnCountdown() {
+  if (nextBtnCountdownTimer) {
+    clearInterval(nextBtnCountdownTimer);
+    nextBtnCountdownTimer = null;
+    nextBtnCountdownRemain = 0;
+    // ボタンのラベルを元に戻す
+    if (nextBtn) {
+      const isFinal = idx+1>=sequence.length;
+      nextBtn.textContent = isFinal ? TEXT.labels.finalResult : TEXT.labels.nextQuestion;
+      nextBtn.style.minWidth = '';
+      // ボタン色リセット
+      if (isFinal) {
+        nextBtn.classList.add('btn-danger');
+        nextBtn.classList.remove('btn-primary');
+      } else {
+        nextBtn.classList.remove('btn-danger');
+        nextBtn.classList.add('btn-primary');
+      }
+    }
+  }
 }
 function canBuzz(){ return flowStarted && !answered && !wrongs[myNick]; }
 function updateBuzzState(){
@@ -233,6 +266,7 @@ function onQuestionTimeout(){
   qTimerEl.style.display = 'none';
   aTimerEl.style.display = 'none';
   nextBtn.disabled = false;
+  startNextBtnCountdown();
   remove(ref(db, `rooms/${roomId}/buzz`));
 }
 
@@ -281,6 +315,7 @@ function watchWrongs(){
       qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
       answerArea.classList.add('hidden'); buzzBtn.disabled = true;
       nextBtn.disabled = false; remove(ref(db,`rooms/${roomId}/buzz`));
+      startNextBtnCountdown();
     }
     updateBuzzState();
   });
@@ -313,14 +348,22 @@ function watchEvents(){
       statusEl.textContent = `${ev.nick} さんが正解！🎉 正解： ${ev.answer}`;
       qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
       nextBtn.disabled = false; updateBuzzState();
+      startNextBtnCountdown();
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       clearTimers();
       const disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
       statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
       flowStarted = true;
       questionStart = ev.timestamp;
+      // タイプライター式の問題文表示を再開
+      currentText = sequence[idx].question;
+      // 途中まで表示されている場合はその続きから再開
+      if (questionEl.textContent.length < currentText.length) {
+        typePos = questionEl.textContent.length;
+        resumeTypewriter();
+      }
       window._qInt = setInterval(tickQ,100);
-      resumeTypewriter(); updateBuzzState();
+      updateBuzzState();
     }
   });
 }
@@ -480,14 +523,43 @@ function startPreCountdown(startTs){
 
 // タイプ制御
 let typePos=0, currentText='';
+// タイプ進捗をDBで同期
+let typeSyncRef = null;
 function showQuestion(){
-  currentText=sequence[idx].question; typePos=0;
-  questionEl.textContent=''; questionEl.style.visibility='visible';
+  currentText = sequence[idx].question; typePos = 0;
+  questionEl.textContent = '';
+  questionEl.style.visibility = 'visible';
   clearInterval(window._typeInt);
-  window._typeInt=setInterval(()=>{
-    if(typePos<currentText.length) questionEl.textContent+=currentText[typePos++];
-    else clearInterval(window._typeInt);
+  // タイプ進捗同期用リファレンス
+  if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
+  typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
+  // ホストが進捗を送信
+  let lastTypePos = 0;
+  window._typeInt = setInterval(() => {
+    if (typePos < currentText.length) {
+      questionEl.textContent += currentText[typePos++];
+      // 進捗をDBに反映（1文字進むごと）
+      if (myNick === Object.keys(players)[0]) { // ホストのみ書き込み
+        if (typePos > lastTypePos) {
+          set(typeSyncRef, typePos);
+          lastTypePos = typePos;
+        }
+      }
+    } else {
+      clearInterval(window._typeInt);
+    }
   }, TEXT.typeSpeed);
+  // 参加者は進捗を監視
+  if (myNick !== Object.keys(players)[0]) {
+    onValue(typeSyncRef, snap => {
+      const synced = snap.val() || 0;
+      if (synced > typePos && typePos < currentText.length) {
+        // 足りない分を一気に表示
+        questionEl.textContent += currentText.slice(typePos, synced);
+        typePos = synced;
+      }
+    });
+  }
   currentNum.textContent=idx+1;
   clearInterval(window._qInt); qTimerEl.style.display='block';
   questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit;
@@ -496,9 +568,22 @@ function showQuestion(){
 function pauseTypewriter(){ clearInterval(window._typeInt); }
 function resumeTypewriter(){
   clearInterval(window._typeInt);
-  window._typeInt=setInterval(()=>{
-    if(typePos<currentText.length) questionEl.textContent+=currentText[typePos++];
-    else clearInterval(window._typeInt);
+  // 表示済みの長さから再開するためtypePosを再取得
+  typePos = questionEl.textContent.length;
+  let lastTypePos = typePos;
+  window._typeInt = setInterval(() => {
+    if (typePos < currentText.length) {
+      questionEl.textContent += currentText[typePos++];
+      // ホストは進捗をDBに反映
+      if (myNick === Object.keys(players)[0]) {
+        if (typePos > lastTypePos) {
+          set(typeSyncRef, typePos);
+          lastTypePos = typePos;
+        }
+      }
+    } else {
+      clearInterval(window._typeInt);
+    }
   }, TEXT.typeSpeed);
 }
 
@@ -525,6 +610,34 @@ function startAnswerTimer(){
       aTimerEl.textContent=TEXT.labels.timeoutLabel+s+TEXT.labels.secondsSuffix;
     }
   },1000);
+}
+
+// 次の問題へボタンのカウントダウン＆自動遷移
+function startNextBtnCountdown() {
+  clearNextBtnCountdown();
+  nextBtnCountdownRemain = 5;
+  const isFinal = idx+1>=sequence.length;
+  const origLabel = isFinal ? TEXT.labels.finalResult : TEXT.labels.nextQuestion;
+  nextBtn.textContent = `${origLabel}（${nextBtnCountdownRemain}）`;
+  nextBtn.style.minWidth = '8.5em';
+  // ボタン色切り替え
+  if (isFinal) {
+    nextBtn.classList.add('btn-danger');
+    nextBtn.classList.remove('btn-primary');
+  } else {
+    nextBtn.classList.remove('btn-danger');
+    nextBtn.classList.add('btn-primary');
+  }
+  nextBtnCountdownTimer = setInterval(() => {
+    nextBtnCountdownRemain--;
+    if (nextBtnCountdownRemain > 0) {
+      nextBtn.textContent = `${origLabel}（${nextBtnCountdownRemain}）`;
+    } else {
+      clearNextBtnCountdown();
+      // 自動でボタン押下処理
+      if (!nextBtn.disabled) nextBtn.click();
+    }
+  }, 1000);
 }
 
 // 早押しボタン処理（トランザクション＋楽観的UI反映）
@@ -570,6 +683,12 @@ buzzBtn.addEventListener('click', async (e) => {
       // 成功時はwatchBuzzでUI確定。スマホで自動的に回答欄を選択
       setTimeout(() => {
         if (document.activeElement !== answerInput) answerInput.focus();
+        // スマホで回答欄を中央にスクロール
+        if (window.innerWidth <= 600) {
+          setTimeout(() => {
+            answerInput.scrollIntoView({behavior:'smooth', block:'center'});
+          }, 300);
+        }
       }, 100);
     }
   });
@@ -594,7 +713,9 @@ function createRipple(e) {
 }
 
 // 解答提出
-answerBtn.addEventListener('click',async()=>{
+
+// 解答ボタンのクリック・Enter対応
+async function submitAnswer() {
   answerBtn.disabled = true;
   const guess = answerInput.value.trim();
   if (!guess) { alert('回答を入力してください'); answerBtn.disabled = false; return; }
@@ -640,6 +761,7 @@ answerBtn.addEventListener('click',async()=>{
 
     await remove(ref(db, `rooms/${roomId}/buzz`));
     updateBuzzState();
+    startNextBtnCountdown();
   } else {
     // 誤答処理
     clearTimers();
@@ -652,18 +774,28 @@ answerBtn.addEventListener('click',async()=>{
       window._qInt = setInterval(tickQ, 100);
     }
   }
+}
+answerBtn.addEventListener('click', submitAnswer);
+answerInput.addEventListener('keydown', function(e) {
+  if (!answerBtn.disabled && (e.key === 'Enter')) {
+    submitAnswer();
+  }
 });
 
 // 次へ
-nextBtn.addEventListener('click',async()=>{
-  if(nextBtn.disabled) return;
+nextBtn.addEventListener('click', async () => {
+  if (nextBtn.disabled) return;
+  clearNextBtnCountdown();
   clearTimers();
-  questionEl.textContent=''; questionEl.style.visibility='hidden';
-  statusEl.textContent=''; qTimerEl.style.display='none'; aTimerEl.style.display='none';
-  questionLabelEl.style.visibility='hidden';
-  if(idx+1<sequence.length){
-    await set(ref(db,`rooms/${roomId}/currentIndex`),idx+1);
-    await set(ref(db,`rooms/${roomId}/settings/preStart`),getServerTime());
+  questionEl.textContent = '';
+  questionEl.style.visibility = 'hidden';
+  statusEl.textContent = '';
+  qTimerEl.style.display = 'none';
+  aTimerEl.style.display = 'none';
+  questionLabelEl.style.visibility = 'hidden';
+  if (idx + 1 < sequence.length) {
+    await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
+    await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
   } else {
     showResults();
   }
@@ -717,6 +849,8 @@ async function showResults(){
     location.reload();
   });
 }
+
+
 
 // 離脱後削除
 window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${myNick}`)); });
