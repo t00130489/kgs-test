@@ -1,16 +1,63 @@
 // script.js
 
-// モジュールのインポート
-import { TEXT } from './constants.js';
-import { db, getServerTime } from './firebase.js';
-import * as DOM from './dom.js';
-import * as State from './state.js';
-import { showFeedback } from './ui.js';
+// セクション：定数
+const TEXT = {
+  preCountdownSec: 3,
+  questionTimeLimit: 30,
+  answerTimeLimit: 15,
+  typeSpeed: 100,
+  labels: {
+    timeoutLabel: '残り ',
+    secondsSuffix: '秒',
+    statusAllWrong: '全員誤答… 正解： ',
+    statusTimeUp: '時間切れ！ 正解： ',
+    statusCorrect: '正解！🎉',
+    statusWrong: guess => `不正解（${guess}）`,
+    nextQuestion: '次の問題へ',
+    finalResult: '最終結果へ',
+    returnHome: 'トップページに戻る',
+    resultsTitle: '結果',
+    participantsHeader: 'メンバーと正解数',
+    perQuestionHeader: '問題別 回答一覧',
+    correctLabel: '正解者： ',
+    incorrectLabel: '不正解者： ',
+    timeoutLabelList: 'タイムアウト',
+    leaveConfirm: 'ゲームから離脱します。よろしいですか？',
+    questionLabelPrefix: '第',
+    questionLabelSuffix: '問'
+  }
+};
 
 // 離脱確認制御
+let allowUnload = false;
 window.onbeforeunload = e => {
-  if (!State.allowUnload) e.returnValue = TEXT.labels.leaveConfirm;
+  if (!allowUnload) e.returnValue = TEXT.labels.leaveConfirm;
 };
+
+// Firebase 初期化
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import {
+  getDatabase, ref, set, push,
+  onValue, onChildAdded, remove,
+  get, child
+} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+
+initializeApp({
+  apiKey: "AIzaSyBYWW8Ldgtow1fxctSqIZynLpxFwRAcc-c",
+  authDomain: "kgs-test-68924.firebaseapp.com",
+  databaseURL: "https://kgs-test-68924-default-rtdb.firebaseio.com",
+  projectId: "kgs-test-68924",
+  storageBucket: "kgs-test-68924.appspot.com",
+  messagingSenderId: "806988019711",
+  appId: "1:806988019711:web:3859c3fa8182371761d9ca",
+  measurementId: "G-QEP0467K9D"
+});
+const db = getDatabase();
+
+// サーバ時刻オフセット取得
+let serverTimeOffset = 0;
+onValue(ref(db, '.info/serverTimeOffset'), s => serverTimeOffset = s.val() || 0);
+const getServerTime = () => Date.now() + serverTimeOffset;
 
 // DOM取得
 const createBtn   = document.getElementById('createBtn');
@@ -49,6 +96,16 @@ quizAppDiv.insertBefore(questionLabelEl, preCd);
 
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
+
+// フィードバック表示
+function showFeedback(isCorrect) {
+  feedbackOverlay.textContent = isCorrect ? '〇' : '×';
+  feedbackOverlay.classList.remove('hidden', 'correct', 'wrong');
+  feedbackOverlay.classList.add(isCorrect ? 'correct' : 'wrong');
+  setTimeout(() => {
+    feedbackOverlay.classList.add('hidden');
+  }, 800);
+}
 
 // 状態変数
 let quizData = [], sequence = [], idx = 0;
