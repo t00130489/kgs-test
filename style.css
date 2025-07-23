@@ -13,9 +13,9 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  min-height: 13em;
-  height: 13em;
-  max-width: 100%;
+  min-height: 15em;
+  height: 15em;
+  max-width: 1000px;
   box-sizing: border-box;
   justify-content: flex-start;
   position: relative;
@@ -35,6 +35,13 @@
   justify-content: flex-start;
   min-height: 7em;
   position: relative;
+  height: 100%;
+}
+.question-card #question-timer, .question-card #pre-countdown {
+  position: absolute;
+  left: 1.2rem;
+  right: 0;
+  bottom: 0.7em;
 }
 .question-card #pre-countdown {
   align-self: center;
@@ -50,7 +57,7 @@
 .question-card #question {
   font-size: 1.2rem;
   margin: 0.5em 0 0.5em 0;
-  line-height: 1.6;
+  line-height: 1.5;
   word-break: break-all;
   overflow-wrap: break-word;
   min-height: 3.2em;
@@ -254,7 +261,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .buzz-btn {
   display: block;
   width: 100%;
-  padding: 1.5rem 1rem;
+  padding: 1rem 1rem;
   font-size: 2.1rem;
   background: var(--danger);
   color: #fff;
