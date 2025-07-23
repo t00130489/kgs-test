@@ -1,1 +1,1 @@
-✅ プレビューURL: https://$CHANNEL_ID--<your-project-id>.web.app
+✅ プレビューURL: https://$CHANNEL_ID--kgs-test-68924.web.app
