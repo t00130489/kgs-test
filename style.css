@@ -1,0 +1,260 @@
+/* style.css */
+
+:root {
+  --primary: #004ea2;
+  --primary-bg: rgba(0, 78, 162, 0.1);
+  --secondary: #006bb3;
+  --bg: #f5f7fa;
+  --card-bg: #ffffff;
+  --text: #222;
+  --muted: #555;
+  --danger: #d32f2f;
+  --danger-bg: rgba(211, 47, 47, 0.1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 1rem;
+  max-width: 1000px;
+  margin: auto;
+}
+
+header {
+  text-align: center;
+  padding: 1rem 0;
+}
+header h1 {
+  font-size: 2rem;
+  color: var(--primary);
+  margin: 0;
+}
+header h1 .version {
+  color: #000;
+  font-size: 0.8rem;
+  font-weight: 300;
+  margin-left: 0.5rem;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.range-label { font-weight: 500; }
+.form-row { margin: 0.75rem 0; }
+.range-row { display: flex; align-items: flex-start; gap: 0.75rem; }
+#chapter-selection {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+#chapter-selection .wide { grid-column: span 2; }
+#room-count { width: 8ch; }
+
+.join-row { display: flex; gap: 0.75rem; }
+
+#description p { margin: 0.5rem 0; line-height: 1.5; color: var(--muted); }
+#description ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+}
+
+button {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.75rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+}
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-secondary { background: var(--secondary); color: #fff; }
+.btn-primary.small { padding: 0.6rem 1rem; font-size: 1rem; }
+.btn-primary.large { padding: 1.2rem 2rem; font-size: 1.6rem; }
+
+.countdown, .timer { font-weight: bold; }
+#pre-countdown {
+  font-size: 3rem;
+  color: var(--danger);
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.question { font-size: 1.2rem; margin: 3rem 0; line-height: 1.6; }
+.question-label { font-size: 1.2rem; font-weight: bold; margin: 0.5rem 0; }
+
+.buzz-btn {
+  display: block;
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.4rem;
+  background: var(--danger);
+  color: #fff;
+  margin: 1rem 0;
+  transition: transform 0.1s;
+}
+.buzz-btn:hover:not(:disabled) { transform: translateY(-1px); }
+
+.status { font-size: 1.2rem; font-weight: bold; margin: 0.8rem 0; }
+
+.answer-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1.5rem 0;
+}
+.answer-area .answer-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+#answer-timer { font-weight: bold; text-align: right; }
+.answer-input {
+  flex: 1 1 150px;
+  padding: 0.6rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+#nextBtn { margin-top: 1rem; }
+.hidden { display: none; }
+
+.highlight {
+  color: var(--primary);
+  font-weight: bold;
+}
+
+.inline-list {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.inline-list li { display: inline; margin-right: 0.5rem; }
+
+.info-bar {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+.info-bar + .info-bar { margin-top: 1rem; }
+.room-info { display: flex; align-items: center; }
+.room-info .gap { flex: 1; }
+
+.start-row.centered {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+/* 結果画面：タイトル/優勝者/参加者 */
+#results.card {
+  margin: 1.5rem;
+}
+#results h2 {
+  font-size: 1.8rem;
+  text-align: center;
+  color: var(--primary);
+  margin-bottom: 1rem;
+}
+/* 優勝者発表 */
+#results .champion-announcement {
+  font-size: 1.4rem;
+  text-align: center;
+  color: var(--danger);
+  margin-bottom: 1rem;
+}
+/* 参加者一覧 */
+#results > ul:first-of-type {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+  justify-content: center;
+}
+#results > ul:first-of-type li {
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-weight: bold;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  transition: transform 0.2s;
+}
+/* 優勝者ハイライト */
+#results > ul:first-of-type li.winner {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  transform: scale(1.05);
+}
+
+/* 結果画面：問題振り返りカードデザイン */
+#results > div {
+  background: var(--bg);
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1rem;
+}
+#results h4 {
+  font-size: 1.2rem;
+  color: #000;
+  margin: 0 0 0.5rem;
+}
+#results > div p {
+  font-weight: bold;
+  margin: 0 0 0.75rem;
+}
+#results > div ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#results > div ul li {
+  margin-bottom: 0.5rem;
+}
+#results > div ul li:first-child {
+  color: var(--primary);
+}
+#results > div ul li:nth-child(n+2) {
+  color: var(--danger);
+}
+
+/* フィードバックオーバーレイ */
+.feedback-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 25rem;
+  z-index: 1000;
+  pointer-events: none;
+}
+.feedback-overlay.correct { color: var(--danger); }
+.feedback-overlay.wrong { color: var(--primary); }
+/* hiddenクラスより優先して非表示にする */
+.feedback-overlay.hidden {
+  display: none !important;
+}
