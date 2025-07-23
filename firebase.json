@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "kgs-test-68924",
     "public": ".",
     "ignore": [
       "firebase.json",
