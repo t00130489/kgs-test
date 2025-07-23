@@ -8,6 +8,9 @@
   width: auto;
   display: inline-block;
   vertical-align: middle;
+  position: relative;
+  top: -0.1em; /* 画像のセンターを文字と揃えるため微調整 */
+  /* 必要に応じてtopの値を微調整してください */
 }
 /* バージョン情報表示用 */
 .version-info {
