@@ -173,20 +173,6 @@ questionLabelEl.className = 'question-label';
 questionLabelEl.style.visibility = 'hidden';
 quizAppDiv.insertBefore(questionLabelEl, preCd);
 
-// 問題文の高さを固定するためのダミーdiv
-const questionDummy = document.createElement('div');
-questionDummy.id = 'question-dummy';
-questionDummy.style.visibility = 'hidden';
-questionDummy.style.pointerEvents = 'none';
-questionDummy.style.height = '0px';
-// クイズ画面のDOMが揃った後に挿入
-window.addEventListener('DOMContentLoaded', () => {
-  const q = document.getElementById('question');
-  if (q && q.parentNode) {
-    q.parentNode.insertBefore(questionDummy, q.nextSibling);
-  }
-});
-
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
 
@@ -557,25 +543,6 @@ function showQuestion(){
   questionEl.textContent = '';
   questionEl.style.visibility = 'visible';
   clearInterval(window._typeInt);
-  // 問題文の最終行を予測し、ダミーで高さを確保
-  setTimeout(() => {
-    questionDummy.style.visibility = 'hidden';
-    questionDummy.style.position = 'absolute';
-    questionDummy.style.width = questionEl.offsetWidth + 'px';
-    questionDummy.style.font = window.getComputedStyle(questionEl).font;
-    questionDummy.textContent = currentText;
-    document.body.appendChild(questionDummy);
-    const h = questionDummy.offsetHeight;
-    questionDummy.style.height = h + 'px';
-    questionDummy.style.display = 'block';
-    questionDummy.style.position = '';
-    questionDummy.style.visibility = 'hidden';
-    questionDummy.style.pointerEvents = 'none';
-    // questionの下にダミーを置いて高さを確保
-    if (questionEl.parentNode && questionEl.nextSibling !== questionDummy) {
-      questionEl.parentNode.insertBefore(questionDummy, questionEl.nextSibling);
-    }
-  }, 0);
   // タイプ進捗同期用リファレンス
   if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
   typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
@@ -612,11 +579,6 @@ function showQuestion(){
   window._qInt=setInterval(tickQ,100); updateBuzzState();
 }
 function pauseTypewriter(){ clearInterval(window._typeInt); }
-// 問題文が全て表示されたらダミーを消す
-const clearQuestionDummy = function() {
-  questionDummy.style.height = '0px';
-  questionDummy.textContent = '';
-};
 function resumeTypewriter(){
   clearInterval(window._typeInt);
   // 表示済みの長さから再開するためtypePosを再取得
@@ -634,7 +596,6 @@ function resumeTypewriter(){
       }
     } else {
       clearInterval(window._typeInt);
-      clearQuestionDummy();
     }
   }, TEXT.typeSpeed);
 }

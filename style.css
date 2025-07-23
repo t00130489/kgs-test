@@ -180,8 +180,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .buzz-btn {
   display: block;
   width: 100%;
-  padding: 1rem;
-  font-size: 1.4rem;
+  padding: 1.5rem 1rem;
+  font-size: 2.1rem;
   background: var(--danger);
   color: #fff;
   margin: 1rem 0;
