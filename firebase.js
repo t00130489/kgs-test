@@ -1,7 +1,7 @@
 // firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import {
-  getDatabase, ref, set, push, onValue, remove
+  getDatabase, ref, set, push, onValue, remove,  get, child      
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
 
 // ——————————————————————————
@@ -40,8 +40,9 @@ export async function genId() {
   let id, exists = true;
   while (exists) {
     id = String(10000 + Math.floor(Math.random() * 90000));
-    // 存在確認
-    exists = (await window.firebaseGet(window.firebaseChild(roomsRef, id))).exists();
+    // ←ここを window.～ じゃなくて普通に get(child(...)) でチェック
+    const snap = await get(child(roomsRef, id));
+    exists = snap.exists();
   }
   return id;
 }
