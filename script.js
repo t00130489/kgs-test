@@ -258,10 +258,12 @@ function onQuestionTimeout(){
   answered = true;
   flowStarted = false;
   questionEl.textContent = sequence[idx].question;
-  statusEl.textContent = TEXT.labels.statusTimeUp + sequence[idx].answer;
+  qTimerEl.textContent = '正解：' + sequence[idx].answer;
+  qTimerEl.classList.add('show-answer');
+  qTimerEl.style.display = 'block';
+  statusEl.textContent = '時間切れ！';
   buzzBtn.disabled = true;
   answerArea.classList.add('hidden');
-  qTimerEl.style.display = 'none';
   aTimerEl.style.display = 'none';
   nextBtn.disabled = false;
   startNextBtnCountdown();
@@ -309,8 +311,11 @@ function watchWrongs(){
     if(!answered && Object.keys(wrongs).length >= total){
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
-      statusEl.textContent = TEXT.labels.statusAllWrong + sequence[idx].answer;
-      qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
+      qTimerEl.textContent = '正解：' + sequence[idx].answer;
+      qTimerEl.classList.add('show-answer');
+      qTimerEl.style.display = 'block';
+      statusEl.textContent = '全員誤答…';
+      aTimerEl.style.display = 'none';
       answerArea.classList.add('hidden'); buzzBtn.disabled = true;
       nextBtn.disabled = false; remove(ref(db,`rooms/${roomId}/buzz`));
       startNextBtnCountdown();
@@ -343,8 +348,11 @@ function watchEvents(){
     if(ev.correct){
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
-      statusEl.textContent = `${ev.nick} さんが正解！🎉 正解： ${ev.answer}`;
-      qTimerEl.style.display = 'none'; aTimerEl.style.display = 'none';
+      statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      qTimerEl.textContent = '正解：' + ev.answer;
+      qTimerEl.classList.add('show-answer');
+      qTimerEl.style.display = 'block';
+      aTimerEl.style.display = 'none';
       nextBtn.disabled = false; updateBuzzState();
       startNextBtnCountdown();
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
@@ -549,7 +557,9 @@ function showQuestion(){
   questionCardBlock.classList.remove('hidden');
   document.getElementById('pre-countdown').style.display = 'none';
   document.getElementById('question').style.display = 'block';
-  document.getElementById('question-timer').style.display = 'block';
+  const qt = document.getElementById('question-timer');
+  qt.classList.remove('show-answer');
+  qt.style.display = 'block';
   clearInterval(window._typeInt);
   // タイプ進捗同期用リファレンス
   if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
@@ -773,10 +783,10 @@ async function submitAnswer() {
     flowStarted = false;
 
     questionEl.textContent = sequence[idx].question;
-    statusEl.textContent = `${myNick} さんが正解！🎉 正解： ${corr}`;
+    qTimerEl.textContent = '正解：' + corr;
+    qTimerEl.style.display = 'block';
     buzzBtn.disabled = true;
     answerArea.classList.add('hidden');
-    qTimerEl.style.display = 'none';
     aTimerEl.style.display = 'none';
     nextBtn.disabled = false;
 
