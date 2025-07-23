@@ -80,7 +80,7 @@
           <li>全ての問題が終了したら、結果画面でスコアと問題の内容を確認できます。</li>
         </ol>
         <p>このクイズは試作版なのでバグもあります。何かあったら教えてください。<br>PKG南大沢校　髙橋悠並</p>
-        <div class="version-info">v2507241</div>
+        <div class="version-info">v2507242</div>
       </section>
     </section>
 
@@ -91,7 +91,7 @@
         <span class="gap"></span>
         <span>参加者： <ul id="players" class="highlight inline-list"></ul></span>
       </div>
-      <div class="info-bar quiz-settings">
+      <div class="info-bar quiz-settings" style="margin-bottom:0.4rem;">
         <span>出題範囲： <strong id="room-range" class="highlight"></strong></span><br>
         <span>問題数： <strong id="currentNum" class="highlight">0</strong>/<strong id="totalNum" class="highlight">0</strong></span>
       </div>
@@ -99,18 +99,23 @@
         <button id="startBtn" class="btn-primary large">問題スタート</button>
       </div>
 
-      <div id="pre-countdown" class="countdown"></div>
-      <div id="question-label" class="question-label"></div>
-      <div id="question" class="question"></div>
-      <div id="question-timer" class="timer"></div>
+      <div class="question-card hidden" id="question-card-block">
+        <div id="question-label" class="question-label"></div>
+        <div class="question-card-center">
+          <div id="pre-countdown" class="countdown"></div>
+          <div id="question" class="question"></div>
+        </div>
+        <div id="question-timer" class="timer"></div>
+      </div>
 
+      <div style="height:0.4em;"></div>
       <button id="buzzBtn" class="buzz-btn">早押し！</button>
       <div id="status" class="status"></div>
 
       <div id="answer-area" class="answer-area hidden">
         <div class="answer-controls">
-          <input id="answerInput" maxlength="15" class="answer-input" placeholder="解答">
-          <button id="answerBtn" class="btn-primary small">解答</button>
+          <input id="answerInput" maxlength="15" class="answer-input" placeholder="回答">
+          <button id="answerBtn" class="btn-primary small">回答</button>
         </div>
         <div id="answer-timer" class="timer"></div>
       </div>

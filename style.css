@@ -1,3 +1,84 @@
+.question-card #question-timer.show-answer {
+  font-size: 1.2rem;
+  margin-top: 0.2em;
+  color: var(--danger);
+  font-weight: bold;
+}
+/* 問題カードブロック（問題番号・本文・タイマーをまとめて高さ固定） */
+.question-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  margin: -1rem 0 0.4rem 0;
+  padding: 1.2rem 1.2rem 1.2rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 15em;
+  height: 15em;
+  max-width: 1000px;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  position: relative;
+}
+.question-card #question-label {
+  margin-bottom: 0.05em;
+  font-size: 1.4rem;
+  text-align: left;
+  font-weight: bold;
+  margin-top: -0.3em;
+}
+.question-card-center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 7em;
+  position: relative;
+  height: 100%;
+}
+.question-card #question-timer, .question-card #pre-countdown {
+  position: absolute;
+  left: 1.2rem;
+  right: 0;
+  bottom: 0.7em;
+}
+.question-card #pre-countdown {
+  position: absolute;
+  top: 60%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 6rem;
+  color: var(--danger);
+  text-align: center;
+  font-weight: bold;
+  min-height: 2.2em;
+  margin: 0;
+}
+.question-card #question {
+  font-size: 1.1rem;
+  margin: 0.5em 0 0.5em 0;
+  line-height: 1.5;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  min-height: 3.2em;
+  max-height: 5.5em;
+  display: block;
+  text-align: left !important;
+}
+.question-card #question-timer {
+  text-align: left;
+  margin-top: 1em;
+  margin-bottom: 0;
+  font-weight: normal;
+}
+.buzz-btn {
+  margin: 0.5rem 0 0.5rem 0 !important;
+}
+#nextBtn {
+  margin-top: 0.5rem !important;
+}
 .main-title {
   display: flex;
   align-items: center;
@@ -112,9 +193,11 @@ header {
 .card {
   background: var(--card-bg);
   border-radius: 12px;
-  padding: 1.5rem;
+  padding: 0.1rem 1.5rem 1.5rem 1.5rem;
   margin-bottom: 1.5rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-top: 0.2em;
+  margin-bottom: 0.7em;
 }
 
 .range-label { font-weight: 500; }
@@ -180,8 +263,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .buzz-btn {
   display: block;
   width: 100%;
-  padding: 1rem;
-  font-size: 1.4rem;
+  padding: 1rem 1rem;
+  font-size: 2.1rem;
   background: var(--danger);
   color: #fff;
   margin: 1rem 0;
@@ -233,7 +316,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   padding: 0.75rem 1rem;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
-.info-bar + .info-bar { margin-top: 1rem; }
+.info-bar + .info-bar { margin-top: 0.5rem; }
 .room-info { display: flex; align-items: center; }
 .room-info .gap { flex: 1; }
 
