@@ -437,6 +437,7 @@ buzzBtn.addEventListener('click', async () => {
     if (!result.committed) {
       // 失敗時ロールバック
       statusEl.textContent = '誰か先に押しました…';
+      answerBtn.disabled = true;
     }
     // 成功時はwatchBuzzでUI確定
   });
