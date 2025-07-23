@@ -358,12 +358,25 @@ function watchEvents(){
       // タイプライター式の問題文表示を再開
       currentText = sequence[idx].question;
       // 途中まで表示されている場合はその続きから再開
-      if (questionEl.textContent.length < currentText.length) {
-        typePos = questionEl.textContent.length;
-        resumeTypewriter();
-      }
-      window._qInt = setInterval(tickQ,100);
-      updateBuzzState();
+        if (questionEl.textContent.length < currentText.length) {
+          typePos = questionEl.textContent.length;
+          resumeTypewriter();
+        }
+        // 最新のtypePosをDBから取得して再開
+        if (typeof typeSyncRef === 'object' && typeSyncRef) {
+          get(typeSyncRef).then(snap => {
+            const synced = snap.val() || 0;
+            typePos = Math.max(questionEl.textContent.length, synced);
+            resumeTypewriter();
+          });
+        } else {
+          if (questionEl.textContent.length < currentText.length) {
+            typePos = questionEl.textContent.length;
+            resumeTypewriter();
+          }
+        }
+        window._qInt = setInterval(tickQ,100);
+        updateBuzzState();
     }
   });
 }
