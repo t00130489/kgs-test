@@ -1,13 +1,6 @@
-
 name: Manual Deploy to Firebase Hosting
 
 on:
-  # プッシュでは動かさない
-  # push:
-  #   branches:
-  #     - main
-
-  # ← これだけ残す
   workflow_dispatch:
 
 jobs:
@@ -15,27 +8,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. リポジトリをチェックアウト
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2. Node.js は Firebase CLI のためだけにセットアップ（Functions を使わないなら不要かも）
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: kgs-test
-
-      # テストがなければ消す
-      #- name: Run tests
-      #  run: npm test
-      #  working-directory: kgs-test
-
-      #- name: Build project
-      #  run: npm run build
-      #  working-directory: kgs-test
-
+      # 3. Firebase へデプロイ
       - name: Deploy to Firebase Hosting
         run: npx firebase deploy --only hosting --token ${{ secrets.FIREBASE_TOKEN }}
-        working-directory: kgs-test
