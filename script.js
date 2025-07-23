@@ -39,7 +39,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebas
 import {
   getDatabase, ref, set, push,
   onValue, onChildAdded, remove,
-  get, child
+  get, child,
+  runTransaction // ← ここを追加
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
 
 initializeApp({
@@ -382,11 +383,24 @@ function startAnswerTimer(){
   },1000);
 }
 
-// 早押し
-buzzBtn.addEventListener('click',()=>{
-  if(!canBuzz()) return;
-  clearInterval(window._qInt); pauseTypewriter();
-  set(ref(db,`rooms/${roomId}/buzz`),{nick:myNick,time:getServerTime()});
+// 早押しボタン処理（トランザクションで書き込み）
+buzzBtn.addEventListener('click', async () => {
+  if (!canBuzz()) return;
+  clearInterval(window._qInt);
+  pauseTypewriter();
+
+  const buzzRef = ref(db, `rooms/${roomId}/buzz`);
+  await runTransaction(buzzRef, current => {
+    // current === null のときだけ「初回書き込み」を許可
+    if (current === null) {
+      return {
+        nick: myNick,
+        time: getServerTime()
+      };
+    }
+    // すでに誰か書き込んでいたら何もしない（トランザクション中止）
+    return;
+  });
 });
 
 // 解答提出
