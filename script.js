@@ -437,7 +437,14 @@ buzzBtn.addEventListener('click', async () => {
     if (!result.committed) {
       // 失敗時ロールバック
       statusEl.textContent = '誰か先に押しました…';
+      // 回答欄・ボタン・タイマーを非表示にし、状態をリセット
+      answerArea.classList.add('hidden');
       answerBtn.disabled = true;
+      aTimerEl.style.display = 'none';
+      answerInput.value = '';
+      // 早押し未参加状態に戻す
+      answered = false;
+      // タイムアップ誤答等の処理は行わない
     }
     // 成功時はwatchBuzzでUI確定
   });
