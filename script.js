@@ -1,3 +1,20 @@
+// PCでEnterキーで早押し・次の問題へボタンを押せるように
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.repeat) {
+    // 早押しボタン
+    if (!buzzBtn.disabled && buzzBtn.offsetParent !== null) {
+      buzzBtn.click();
+      e.preventDefault();
+      return;
+    }
+    // 次の問題へボタン
+    if (!nextBtn.disabled && nextBtn.offsetParent !== null) {
+      nextBtn.click();
+      e.preventDefault();
+      return;
+    }
+  }
+});
 // script.js
 
 // セクション：定数
