@@ -900,6 +900,7 @@ async function showResults(){
   resultsDiv.innerHTML = html;
   document.getElementById('backBtn').addEventListener('click', () => {
     allowUnload = true;
+    window.scrollTo({top: 0, left: 0, behavior: 'auto'});
     location.reload();
   });
 }
