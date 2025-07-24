@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kgs-quiz-cache-v250724-5e';
+const CACHE_NAME = 'kgs-quiz-cache-v250724m';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -32,9 +32,25 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request);
-    })
-  );
+  // HTML, CSS, JS, manifestは必ずネットワーク優先で取得
+  if (event.request.mode === 'navigate' || event.request.destination === 'document' || event.request.url.endsWith('.html') || event.request.url.endsWith('.css') || event.request.url.endsWith('.js') || event.request.url.endsWith('manifest.json')) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        // 最新をキャッシュにも保存
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseClone);
+        });
+        return response;
+      }).catch(() => {
+        return caches.match(event.request);
+      })
+    );
+  } else {
+    event.respondWith(
+      caches.match(event.request).then(response => {
+        return response || fetch(event.request);
+      })
+    );
+  }
 });
