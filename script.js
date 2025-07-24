@@ -520,11 +520,20 @@ createBtn.addEventListener('click',async()=>{
 
 // ルーム参加
 joinRoomBtn.addEventListener('click',async()=>{
-  const inputId=roomIdInput.value.trim(); if(!inputId){ alert('ルームIDを入力してください'); return; }
-  const snap=await get(child(ref(db,'rooms'),inputId)); if(!snap.exists()){ alert('ルームが存在しません'); return; }
+  const inputId=roomIdInput.value.trim();
+  if(!inputId){ alert('ルームIDを入力してください'); return; }
+  const snap=await get(child(ref(db,'rooms'),inputId));
+  if(!snap.exists()){ alert('ルームが存在しません'); return; }
   roomId=inputId;
   const nick = await showNicknameModal();
   if(!nick) return;
+  // 既存参加者と同じニックネームは不可
+  const playersSnap = await get(ref(db,`rooms/${roomId}/players`));
+  const playersObj = playersSnap.val() || {};
+  if (Object.keys(playersObj).includes(nick)) {
+    alert('その名前は既に使われています。他の名前を入力してください。');
+    return;
+  }
   myNick=nick; joinTs=getServerTime();
   await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');

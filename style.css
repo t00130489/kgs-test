@@ -1,3 +1,4 @@
+#chapter-selection .grad-margin { margin-top: 14px !important; }
 /* 結果画面は初期で非表示 */
 #results.hidden {
   display: none !important;
@@ -22,10 +23,13 @@
 @media (min-width: 600px) {
   .vertical-chapter-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    max-width: 420px;
+    max-width: 520px;
     margin-left: auto;
     margin-right: auto;
     justify-content: center;
+    padding-left: 2.5em;
+    padding-right: 2.5em;
+    gap: 24px 40px;
   }
 }
 
@@ -305,8 +309,8 @@
 .form-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 2px;
+  margin-bottom: 2px;
 }
 
 .chapter-grid {
@@ -432,7 +436,7 @@ header {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0.5rem;
 }
-#chapter-selection .wide { grid-column: span 2; }
+#chapter-selection .wide { grid-column: span 2; margin-top: 0; margin-bottom: 0; }
 #room-count { width: 8ch; }
 
 .join-row { display: flex; gap: 0.75rem; }
