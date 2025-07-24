@@ -18,7 +18,16 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    ).then(() => {
+      // activate時にクライアントを強制リロード
+      return self.clients.claim().then(() => {
+        return self.clients.matchAll().then(clients => {
+          clients.forEach(client => {
+            client.navigate(client.url);
+          });
+        });
+      });
+    })
   );
 });
 

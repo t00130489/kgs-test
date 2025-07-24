@@ -83,6 +83,7 @@ const roomCountInput = document.getElementById('room-count');
 const createBtn   = document.getElementById('createBtn');
 const joinRoomBtn = document.getElementById('joinRoomBtn');
 const roomIdInput = document.getElementById('roomIdInput');
+joinRoomBtn.disabled = true;
 
 
 // バリデーション用エラー表示
@@ -106,8 +107,8 @@ roomCountInput.addEventListener('input', () => {
 });
 roomIdInput.addEventListener('input', () => {
   const val = roomIdInput.value;
-  if (val === '' || val.match(/^[0-9]{5}$/)) {
-    // 空欄または5桁の数字なら正常書式
+  if (val.match(/^[0-9]{5}$/)) {
+    // 5桁の数字のみ有効
     showInputError(roomIdInput, '');
     joinRoomBtn.disabled = false;
     roomIdInput.classList.remove('valid-input');
