@@ -78,9 +78,48 @@ onValue(ref(db, '.info/serverTimeOffset'), s => serverTimeOffset = s.val() || 0)
 const getServerTime = () => Date.now() + serverTimeOffset;
 
 // DOM取得
+
+const roomCountInput = document.getElementById('room-count');
 const createBtn   = document.getElementById('createBtn');
 const joinRoomBtn = document.getElementById('joinRoomBtn');
 const roomIdInput = document.getElementById('roomIdInput');
+
+
+// バリデーション用エラー表示
+
+function showInputError(input, message) {
+  input.setCustomValidity(message);
+  input.reportValidity();
+}
+
+// 出題問題数バリデーション
+
+roomCountInput.addEventListener('input', () => {
+  const val = roomCountInput.value;
+  if (!val.match(/^[0-9]{1,3}$/) || val < 1 || val > 999) {
+    showInputError(roomCountInput, '1～999の数字を入力してください');
+    createBtn.disabled = true;
+  } else {
+    showInputError(roomCountInput, '');
+    createBtn.disabled = false;
+  }
+});
+roomIdInput.addEventListener('input', () => {
+  const val = roomIdInput.value;
+  if (val === '' || val.match(/^[0-9]{5}$/)) {
+    // 空欄または5桁の数字なら正常書式
+    showInputError(roomIdInput, '');
+    joinRoomBtn.disabled = false;
+    roomIdInput.classList.remove('valid-input');
+  } else {
+    showInputError(roomIdInput, '5桁の数字のみ入力してください');
+    joinRoomBtn.disabled = true;
+    roomIdInput.classList.remove('valid-input');
+  }
+});
+window.addEventListener('DOMContentLoaded', () => {
+  roomIdInput.classList.remove('valid-input');
+});
 const homeDiv     = document.getElementById('home');
 const quizAppDiv  = document.getElementById('quiz-app');
 const resultsDiv  = document.getElementById('results');
@@ -287,7 +326,7 @@ function onQuestionTimeout(){
   remove(ref(db, `rooms/${roomId}/buzz`));
 }
 
-// 初期UI
+// 初期状態
 createBtn.disabled = true;
 answerArea.classList.add('hidden');
 answerBtn.disabled = true;
@@ -772,9 +811,9 @@ function createRipple(e) {
 async function submitAnswer() {
   answerBtn.disabled = true;
   const guess = answerInput.value.trim();
-  if (!guess) { alert('回答を入力してください'); answerBtn.disabled = false; return; }
+  // 空欄でも回答可能にし、不正解として処理
   const corr = sequence[idx].answer.trim();
-  const isCorrect = (guess === corr);
+  const isCorrect = (guess === corr && guess !== '');
 
   // フィードバック表示
   showFeedback(isCorrect);
@@ -886,12 +925,16 @@ async function showResults(){
   });
   html += `</ul><h3>${TEXT.labels.perQuestionHeader}</h3>`;
   sequence.forEach((q, i) => {
-    html += `<div><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
+    html += `<div class="result-question-card"><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
     const win = allEvents.filter(e => e.questionIndex === i && e.correct).map(e => e.nick);
     html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
     const los = allEvents.filter(e => e.questionIndex === i && !e.correct);
     los.forEach(e => {
-      html += `<li>${TEXT.labels.incorrectLabel}${e.nick}（${e.guess || '時間切れ'}）</li>`;
+      let disp = '';
+      if (e.guess === '' && e.type === 'wrongGuess') disp = '空欄';
+      else if (!e.guess || e.guess === '時間切れ' || e.type === 'answerTimeout') disp = '時間切れ';
+      else disp = e.guess;
+      html += `<li>${TEXT.labels.incorrectLabel}${e.nick}（${disp}）</li>`;
     });
     html += `</ul></div>`;
   });
@@ -909,3 +952,11 @@ async function showResults(){
 
 // 離脱後削除
 window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${myNick}`)); });
+
+// --- 最終結果画面の空欄回答と時間切れの区別 ---
+// 回答一覧表示部分を修正
+function getAnswerDisplay(ans, timedOut) {
+  if (timedOut) return '時間切れ';
+  if (ans === '') return '（空欄）';
+  return ans;
+}

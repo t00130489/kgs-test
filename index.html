@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>興学思想テスト早押しクイズバトル</title>
-  <link rel="stylesheet" href="style.css?v=2507243">
+  <link rel="stylesheet" href="style.css?v=250724-4">
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEP0467K9D"></script>
   <script>
@@ -34,43 +34,45 @@
   <main>
     <!-- ルーム作成＆参加 -->
     <section id="home">
-      <div class="card">
-        <h2>新しいルームを作成</h2>
+      <div class="card home-card">
+        <h2 class="card-title">新しいルームを作成</h2>
         <div class="form-row range-row">
-          <span class="range-label">出題範囲：</span>
-          <div id="chapter-selection">
-            <label><input type="checkbox" value="0"> 序章</label>
-            <label><input type="checkbox" value="1"> 第一章</label>
-            <label><input type="checkbox" value="2"> 第二章</label>
-            <label><input type="checkbox" value="3"> 第三章</label>
-            <label><input type="checkbox" value="4"> 第四章</label>
-            <label><input type="checkbox" value="5"> 第五章</label>
-            <label><input type="checkbox" value="6"> 第六章</label>
-            <label><input type="checkbox" value="7"> 第七章</label>
-            <label class="wide"><input type="checkbox" id="grad-range"> 大学院の範囲（序・一・四・七）</label>
-            <label class="wide"><input type="checkbox" id="all-range"> 全範囲</label>
+          <div class="vertical-range-block">
+            <span class="range-label">出題範囲</span>
+            <div id="chapter-selection" class="chapter-grid styled-chapter-grid vertical-chapter-grid">
+              <span class="custom-checkbox"><input type="checkbox" id="ch0" value="0"><label for="ch0">序章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch1" value="1"><label for="ch1">第一章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch2" value="2"><label for="ch2">第二章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch3" value="3"><label for="ch3">第三章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch4" value="4"><label for="ch4">第四章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch5" value="5"><label for="ch5">第五章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch6" value="6"><label for="ch6">第六章</label></span>
+              <span class="custom-checkbox"><input type="checkbox" id="ch7" value="7"><label for="ch7">第七章</label></span>
+              <span class="custom-checkbox wide"><input type="checkbox" id="grad-range"><label for="grad-range">大学院の範囲（序・一・四・七）</label></span>
+              <span class="custom-checkbox wide"><input type="checkbox" id="all-range"><label for="all-range">全範囲</label></span>
+            </div>
           </div>
         </div>
         <div class="form-row">
-          <label><span class="range-label">出題問題数：</span>
-            <input type="number" id="room-count" value="10" min="1" max="999">
-          </label>
+          <label for="room-count" class="range-label">出題問題数</label>
+          <input type="number" id="room-count" class="styled-input" value="10" min="1" max="999" required pattern="^[0-9]{1,3}$" inputmode="numeric" placeholder="1～999">
         </div>
-        <button id="createBtn" class="btn-primary">ルーム作成</button>
+        <button id="createBtn" class="btn-primary home-btn">ルーム作成</button>
       </div>
 
-      <div class="card">
-        <h2>ルームへ参加</h2>
-        <div class="form-row join-row">
-          <input id="roomIdInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="ルームID（数字）">
-          <button id="joinRoomBtn" class="btn-secondary">参加</button>
+      <div class="card home-card">
+        <h2 class="card-title">ルームへ参加</h2>
+        <div class="form-row join-row styled-join-row">
+          <label for="roomIdInput" class="range-label" style="margin-right:8px;">ルームID</label>
+          <input id="roomIdInput" class="styled-input short-input" type="text" inputmode="numeric" maxlength="5" required placeholder="数字のみ">
         </div>
+        <button id="joinRoomBtn" class="btn-secondary home-btn">参加</button>
       </div>
 
-      <section id="description" class="card">
-        <h2>使い方・ルール</h2>
-        <p>ぼっち勉強用 兼 みんなでワイワイ用の興学思想早押しクイズです。</p>
-        <ol>
+      <section id="description" class="card home-card">
+        <h2 class="card-title">使い方・ルール</h2>
+        <p class="desc-lead">ぼっち勉強用 兼 みんなでワイワイ用の興学思想早押しクイズです。</p>
+        <ol class="desc-list">
           <li>出題範囲と問題数を決めてルームを作成してください。</li>
           <li>他の参加者にルームIDを共有して参加をしてもらってください。</li>
           <li>全員揃ったらオーナーは問題をスタートしてください。</li>
@@ -79,8 +81,8 @@
           <li>誤答するとその問題は回答できなくなり、全員が誤答したらその問題は終了します。</li>
           <li>全ての問題が終了したら、結果画面でスコアと問題の内容を確認できます。</li>
         </ol>
-        <p>このクイズは試作版なのでバグもあります。何かあったら教えてください。<br>PKG南大沢校　髙橋悠並</p>
-        <div class="version-info">v2507243</div>
+        <p class="desc-note">このクイズは試作版なのでバグもあります。何かあったら教えてください。<br>PKG南大沢校　髙橋悠並</p>
+        <div class="version-info">v250724-4</div>
       </section>
     </section>
 
@@ -130,6 +132,6 @@
   <!-- フィードバックオーバーレイ -->
   <div id="feedback-overlay" class="feedback-overlay hidden"></div>
 
-  <script type="module" src="script.js?v=2507243"></script>
+  <script type="module" src="script.js?v=250724-4"></script>
 </body>
 </html>
