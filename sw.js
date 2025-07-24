@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kgs-quiz-cache-v250724m';
+const CACHE_NAME = 'kgs-quiz-cache-v24l';
 const urlsToCache = [
   '/',
   '/index.html',
