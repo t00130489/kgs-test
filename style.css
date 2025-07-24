@@ -1,3 +1,157 @@
+/* 結果画面は初期で非表示 */
+#results.hidden {
+  display: none !important;
+}
+/* 出題範囲ラベルとチェック群の上下配置 */
+.vertical-range-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5em;
+  margin-bottom: 0.5em;
+}
+.vertical-chapter-grid {
+  padding-left: 0.5em;
+  padding-right: 0.5em;
+  gap: 14px 24px;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 420px;
+}
+@media (min-width: 600px) {
+  .vertical-chapter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+    justify-content: center;
+  }
+}
+
+/* ルームID入力欄の幅短縮 */
+.short-input {
+  min-width: 6em;
+  max-width: 6em;
+  width: 6em;
+  font-size: 1.15em;
+  padding: 0.5em 1em;
+  border: 2px solid #1976d2;
+  border-radius: 8px;
+  background: #f7faff;
+  color: #2a3a5e;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  margin: 0.2em 0.5em 0.2em 0;
+}
+.valid-input:focus {
+  border-color: #1565c0 !important;
+  box-shadow: 0 0 0 2px #90caf9 !important;
+  background: #e3f2fd !important;
+}
+
+/* チェックボックスの歪み防止 */
+.custom-checkbox input[type="checkbox"] {
+  box-sizing: border-box;
+  margin: 0 2px 0 0;
+}
+/* スタイリッシュなテキストボックス */
+.styled-input {
+  font-size: 1.15em;
+  padding: 0.5em 1em;
+  border: 2px solid #1976d2;
+  border-radius: 8px;
+  background: #f7faff;
+  color: #2a3a5e;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  margin: 0.2em 0.5em 0.2em 0;
+  min-width: 7em;
+  max-width: 14em;
+}
+.styled-input:focus {
+  border-color: #1565c0;
+  box-shadow: 0 0 0 2px #90caf9;
+}
+.styled-input:invalid {
+  border-color: #1976d2;
+  background: #f7faff;
+}
+
+/* ルームID欄が入力ミス（空欄以外でinvalid）の場合のみ赤枠 */
+#roomIdInput.styled-input:not(:placeholder-shown):invalid {
+  border-color: #e53935;
+  background: #fff5f5;
+}
+
+/* 範囲選択グリッド余白拡大 */
+.styled-chapter-grid {
+  padding: 0.5em 1.5em 0.5em 1.5em;
+  gap: 12px 20px;
+}
+
+/* ルームID入力行の配置調整 */
+.styled-join-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.7em;
+  margin-bottom: 0.5em;
+}
+/* スタイリッシュなカスタムチェックボックス */
+.custom-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  padding: 2px 0;
+}
+.custom-checkbox input[type="checkbox"] {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #1976d2;
+  border-radius: 50%;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  position: relative;
+  outline: none;
+}
+.custom-checkbox input[type="checkbox"]:checked {
+  border-color: #1976d2;
+  background: #1976d2;
+}
+.custom-checkbox input[type="checkbox"]:checked::after {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+.custom-checkbox input[type="checkbox"]:hover {
+  box-shadow: 0 0 0 2px #90caf9;
+}
+.custom-checkbox input[type="checkbox"]:focus {
+  box-shadow: 0 0 0 2px #1976d2;
+}
+.custom-checkbox label {
+  font-size: 1.08em;
+  color: #2a3a5e;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  padding-left: 2px;
+}
+.custom-checkbox.wide {
+  grid-column: span 4;
+  margin-top: 4px;
+}
 .question-card #question-timer.show-answer {
   font-size: 1.2rem;
   margin-top: 0.2em;
@@ -59,7 +213,7 @@
 .question-card #question {
   font-size: 1.1rem;
   margin: 0.5em 0 0.5em 0;
-  line-height: 1.5;
+  line-height: 1.6;
   word-break: break-all;
   overflow-wrap: break-word;
   min-height: 3.2em;
@@ -118,17 +272,87 @@
   pointer-events: none;
   z-index: 2;
 }
-@keyframes ripple-anim {
-  to {
-    transform: scale(2.5);
-    opacity: 0;
-  }
+.card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  margin: 32px auto;
+  padding: 32px 28px;
+  max-width: 520px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-/* フィードバックオーバーレイのアニメーション強化 */
-.feedback-overlay.animating {
-  animation: feedback-pop 0.7s cubic-bezier(.4,2,.6,1);
+.home-card {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
 }
+
+.card-title {
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #2a3a5e;
+  margin-bottom: 18px;
+  letter-spacing: 0.04em;
+}
+
+.range-label {
+  font-weight: bold;
+  color: #2a3a5e;
+  margin-right: 8px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.chapter-grid .wide {
+  grid-column: span 4;
+  margin-top: 4px;
+}
+
+.home-btn {
+  min-width: 120px;
+  font-size: 1.1em;
+  padding: 10px 0;
+  margin-top: 8px;
+}
+
+.desc-lead {
+  font-size: 1.1em;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.desc-list {
+  margin-left: 1.2em;
+  margin-bottom: 10px;
+}
+
+.desc-note {
+  font-size: 0.95em;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.version-info {
+  font-size: 0.85em;
+  color: #aaa;
+  text-align: right;
+  margin-top: 10px;
+}
+
 @keyframes feedback-pop {
   0% { opacity: 0; transform: scale(0.7); }
   20% { opacity: 1; transform: scale(1.15); }
@@ -328,7 +552,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 結果画面：タイトル/優勝者/参加者 */
 #results.card {
-  margin: 1.5rem;
+  margin: 1.5rem auto;
+  max-width: 600px;
+  display: block;
 }
 #results h2 {
   font-size: 1.8rem;
@@ -377,6 +603,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
   margin-bottom: 1rem;
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* 結果画面の問題カード個別中央寄せ */
+.result-question-card {
+  background: var(--card-bg);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin: 1.2em auto;
+  padding: 1em 1.2em;
+  max-width: 480px;
+  width: 100%;
 }
 #results h4 {
   font-size: 1.2rem;
@@ -421,4 +660,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 /* hiddenクラスより優先して非表示にする */
 .feedback-overlay.hidden {
   display: none !important;
+}
+.valid-input:focus, .valid-input {
+  border-color: #1565c0 !important;
+  box-shadow: 0 0 0 2px #90caf9 !important;
+  background: #e3f2fd !important;
 }
