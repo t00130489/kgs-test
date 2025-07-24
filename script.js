@@ -1,3 +1,20 @@
+// PCでEnterキーで早押し・次の問題へボタンを押せるように
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.repeat) {
+    // 早押しボタン
+    if (!buzzBtn.disabled && buzzBtn.offsetParent !== null) {
+      buzzBtn.click();
+      e.preventDefault();
+      return;
+    }
+    // 次の問題へボタン
+    if (!nextBtn.disabled && nextBtn.offsetParent !== null) {
+      nextBtn.click();
+      e.preventDefault();
+      return;
+    }
+  }
+});
 // script.js
 
 // セクション：定数
@@ -429,7 +446,13 @@ createBtn.addEventListener('click',async()=>{
   if(!nick) return;
   myNick=nick; joinTs=getServerTime(); roomId=await genId();
   await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,createdAt:getServerTime()});
-  sequence=quizData.filter(q=>chs.includes(+q.chapter)).sort(()=>Math.random()-.5).slice(0,cnt);
+  const pool = quizData.filter(q=>chs.includes(+q.chapter));
+  // Fisher-Yatesシャッフル
+  for(let i=pool.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  sequence=pool.slice(0,cnt);
   await set(ref(db,`rooms/${roomId}/sequence`),sequence);
   await set(ref(db,`rooms/${roomId}/currentIndex`),0);
   await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
