@@ -264,6 +264,9 @@ const allEvents = [];
 let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
 let roomModeValue = 'input'; // ルームのモード（input/select）
+let pressedCorrectButLost = false; // 選択肢正解ボタンを押したが一着でなかった場合のフラグ
+let alreadyScoredForThisQuestion = false; // 1問で複数回スコア加算しないためのフラグ
+let alreadyHandledCorrectEvent = false; // 1問で正解イベント処理を1回だけ行う
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -331,6 +334,17 @@ function onQuestionTimeout(){
   nextBtn.disabled = false;
   startNextBtnCountdown();
   remove(ref(db, `rooms/${roomId}/buzz`));
+  // 選択モード時のUI
+  if (roomModeValue === 'select') {
+    Array.from(choiceArea.children).forEach(b => {
+      if (b.dataset.isAnswer === '1') {
+        b.classList.add('btn-danger');
+      } else {
+        b.classList.add('disabled-btn');
+      }
+      b.disabled = true;
+    });
+  }
 }
 
 // 初期状態
@@ -420,10 +434,39 @@ function watchEvents(){
   onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
     const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     allEvents.push(ev);
+    // --- 正解イベント多重処理防止 ---
     if(ev.correct){
+      if (alreadyHandledCorrectEvent && ev.questionIndex === idx) return;
+      alreadyHandledCorrectEvent = true;
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
-      statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      // --- 一着でなかった自分が正解ボタンを押していた場合の表示分岐 ---
+      if (roomModeValue === 'select' && ev.nick !== myNick) {
+        // 自分が正解ボタンを押していたか判定
+        if (allEvents.some(e => e.questionIndex === idx && e.nick === myNick && e.type === 'selectCorrect')) {
+          if (!pressedCorrectButLost) {
+            statusEl.textContent = `${ev.nick} さんが先に正解しました…`;
+            pressedCorrectButLost = true;
+          }
+          // 上書き防止: 以降の正解イベントではstatusElを書き換えない
+          return;
+        } else if (!pressedCorrectButLost) {
+          statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+        }
+      } else if (ev.nick === myNick) {
+        statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+        // スコア加算（1問1回のみ）
+        if (!alreadyScoredForThisQuestion) {
+          alreadyScoredForThisQuestion = true;
+          const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
+          get(sr).then(snap => {
+            const prev = snap.exists() ? snap.val() : 0;
+            set(sr, prev + 1);
+          });
+        }
+      } else {
+        statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      }
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -440,14 +483,6 @@ function watchEvents(){
             b.classList.add('disabled-btn');
           }
           b.disabled = true;
-        });
-      }
-      // スコア加算
-      if (ev.nick === myNick) {
-        const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
-        get(sr).then(snap => {
-          const prev = snap.exists() ? snap.val() : 0;
-          set(sr, prev + 1);
         });
       }
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
@@ -532,6 +567,18 @@ createBtn.addEventListener('click',async()=>{
   for(let i=pool.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
     [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  // 選択肢順同期用: 各問題にchoicesOrderを付与
+  if (mode === 'select') {
+    pool.forEach(q => {
+      // 0:answer, 1:ng1, 2:ng2, 3:ng3, 4:ng4
+      let order = [0,1,2,3,4];
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      q.choicesOrder = order;
+    });
   }
   sequence=pool.slice(0,cnt);
   await set(ref(db,`rooms/${roomId}/sequence`),sequence);
@@ -730,20 +777,24 @@ function showQuestion(){
     choiceArea.classList.remove('hidden');
     // 選択肢生成（answer, ng1～ng4）
     const q = sequence[idx];
-    let choices = [q.answer, q.ng1, q.ng2, q.ng3, q.ng4];
-    // シャッフル（全員同期のためsequenceにchoicesOrderを持たせるのが理想だが、まずはローカルで）
-    choices = choices.map((c, i) => ({c, i}));
-    for (let i = choices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [choices[i], choices[j]] = [choices[j], choices[i]];
+    let baseChoices = [q.answer, q.ng1, q.ng2, q.ng3, q.ng4];
+    let choices;
+    if (q.choicesOrder && Array.isArray(q.choicesOrder) && q.choicesOrder.length === 5) {
+      choices = q.choicesOrder.map(i => ({c: baseChoices[i], i}));
+    } else {
+      // 旧データや入力モード用: ローカルシャッフル
+      choices = baseChoices.map((c, i) => ({c, i}));
+      for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+      }
     }
-    // ボタン生成
-    choiceArea.innerHTML = '';
     // 選択肢一着判定用のリセット
     if (roomModeValue === 'select') {
       // 問題ごとに一着判定用のselectBuzzをリセット
       remove(ref(db, `rooms/${roomId}/selectBuzz`));
     }
+    choiceArea.innerHTML = '';
     choices.forEach((obj, idxChoice) => {
       const btn = document.createElement('button');
       btn.className = 'btn-primary';
@@ -775,7 +826,8 @@ function showQuestion(){
             return;
           }).then(async result => {
             if (!result.committed) {
-              // 先に押した人がいる場合
+              // 失敗時ロールバック
+              // 先に押した人の名前を取得して表示
               get(selectRef).then(snap => {
                 const selectData = snap.val();
                 const who = selectData && selectData.nick ? selectData.nick : '誰か';
@@ -803,10 +855,6 @@ function showQuestion(){
                 timestamp: getServerTime(),
                 type: 'selectCorrect'
               });
-              // スコア加算
-              const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
-              const snap = await get(sr), prev = snap.exists() ? snap.val() : 0;
-              await set(sr, prev + 1);
               // タイマー停止・次の問題へボタン有効化等はwatchEventsで処理
             }
           });
@@ -1018,11 +1066,7 @@ async function submitAnswer() {
   await push(ref(db, `rooms/${roomId}/events`), ev);
 
   if (isCorrect) {
-    // 正解処理
-    const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
-    const snap = await get(sr), prev = snap.exists() ? snap.val() : 0;
-    await set(sr, prev + 1);
-
+    // 正解処理（スコア加算はwatchEventsで行う）
     clearTimers();
     answered = true;
     flowStarted = false;
@@ -1069,11 +1113,13 @@ nextBtn.addEventListener('click', async () => {
   qTimerEl.style.display = 'none';
   aTimerEl.style.display = 'none';
   questionLabelEl.style.visibility = 'hidden';
-  // 選択肢ボタンを非表示・リセット
   if (choiceArea) {
     choiceArea.classList.add('hidden');
     choiceArea.innerHTML = '';
   }
+  pressedCorrectButLost = false;
+  alreadyScoredForThisQuestion = false;
+  alreadyHandledCorrectEvent = false;
   if (idx + 1 < sequence.length) {
     await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
     await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
