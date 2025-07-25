@@ -56,6 +56,13 @@
             </div>
           </div>
         </div>
+        <div class="form-row" style="margin-bottom:0.5em;">
+          <span class="range-label">モード</span>
+          <span style="display:inline-flex; gap:1.2em;">
+            <label><input type="radio" name="quiz-mode" id="mode-input" value="input" checked> 入力モード</label>
+            <label><input type="radio" name="quiz-mode" id="mode-select" value="select"> 選択モード</label>
+          </span>
+        </div>
         <div class="form-row">
           <label for="room-count" class="range-label">出題問題数</label>
           <input type="number" id="room-count" class="styled-input" value="10" min="1" max="999" required pattern="^[0-9]{1,3}$" inputmode="numeric" placeholder="1～999">
@@ -98,7 +105,10 @@
       </div>
       <div class="info-bar quiz-settings" style="margin-bottom:0.4rem;">
         <span>出題範囲： <strong id="room-range" class="highlight"></strong></span><br>
-        <span>問題数： <strong id="currentNum" class="highlight">0</strong>/<strong id="totalNum" class="highlight">0</strong></span>
+        <span style="display:inline-flex; gap:2em; align-items:center;">
+          <span id="room-mode-label">モード：<strong id="room-mode" class="highlight"></strong></span>
+          <span>問題数： <strong id="currentNum" class="highlight">0</strong>/<strong id="totalNum" class="highlight">0</strong></span>
+        </span>
       </div>
       <div class="start-row centered">
         <button id="startBtn" class="btn-primary large">問題スタート</button>
@@ -115,6 +125,7 @@
 
       <div style="height:0.4em;"></div>
       <button id="buzzBtn" class="buzz-btn">早押し！</button>
+      <div id="choice-area" class="hidden" style="display:flex; flex-direction:column; gap:0.7em; margin:1.2em 0;"></div>
       <div id="status" class="status"></div>
 
       <div id="answer-area" class="answer-area hidden">
