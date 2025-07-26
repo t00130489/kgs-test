@@ -940,10 +940,7 @@ async function showResults(){
     html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
     const los = allEvents.filter(e => e.questionIndex === i && !e.correct);
     los.forEach(e => {
-      let disp = '';
-      if (e.guess === '' && e.type === 'wrongGuess') disp = '空欄';
-      else if (!e.guess || e.guess === '時間切れ' || e.type === 'answerTimeout') disp = '時間切れ';
-      else disp = e.guess;
+      const disp = getAnswerDisplay(e.guess, e.type === 'answerTimeout');
       html += `<li>${TEXT.labels.incorrectLabel}${e.nick}（${disp}）</li>`;
     });
     html += `</ul></div>`;
@@ -967,6 +964,6 @@ window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${
 // 回答一覧表示部分を修正
 function getAnswerDisplay(ans, timedOut) {
   if (timedOut) return '時間切れ';
-  if (ans === '') return '（空欄）';
+  if (ans === '') return '空欄';
   return ans;
 }
