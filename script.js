@@ -442,15 +442,16 @@ function watchEvents(){
       questionEl.textContent = sequence[idx].question;
       // --- 一着でなかった自分が正解ボタンを押していた場合の表示分岐 ---
       if (roomModeValue === 'select' && ev.nick !== myNick) {
+        if (pressedCorrectButLost) {
+          statusEl.textContent = `${ev.nick} さんが先に正解しました…`;
+          return;
+        }
         // 自分が正解ボタンを押していたか判定
         if (allEvents.some(e => e.questionIndex === idx && e.nick === myNick && e.type === 'selectCorrect')) {
-          if (!pressedCorrectButLost) {
-            statusEl.textContent = `${ev.nick} さんが先に正解しました…`;
-            pressedCorrectButLost = true;
-          }
-          // 上書き防止: 以降の正解イベントではstatusElを書き換えない
+          statusEl.textContent = `${ev.nick} さんが先に正解しました…`;
+          pressedCorrectButLost = true;
           return;
-        } else if (!pressedCorrectButLost) {
+        } else {
           statusEl.textContent = `${ev.nick} さんが正解！🎉`;
         }
       } else if (ev.nick === myNick) {
@@ -836,6 +837,7 @@ function showQuestion(){
                   showFeedback(true);
                 } else {
                   statusEl.textContent = `${who} さんが先に押しました…`;
+                  pressedCorrectButLost = true;
                 }
                 // 全ボタン無効化
                 Array.from(choiceArea.children).forEach(b => b.disabled = true);
