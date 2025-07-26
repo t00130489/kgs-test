@@ -400,6 +400,17 @@ function watchWrongs(){
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
       statusEl.textContent = '全員誤答…';
+      // 選択モード時は正解の選択肢を表示し、他は無効化
+      if (roomModeValue === 'select') {
+        Array.from(choiceArea.children).forEach(b => {
+          if (b.dataset.isAnswer === '1') {
+            b.classList.add('btn-danger');
+          } else {
+            b.classList.add('disabled-btn');
+            b.disabled = true;
+          }
+        });
+      }
       aTimerEl.style.display = 'none';
       answerArea.classList.add('hidden'); buzzBtn.disabled = true;
       nextBtn.disabled = false; remove(ref(db,`rooms/${roomId}/buzz`));
