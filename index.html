@@ -58,10 +58,20 @@
         </div>
         <div class="form-row" style="margin-bottom:0.5em;">
           <span class="range-label">モード</span>
-          <span style="display:inline-flex; gap:1.2em;">
-            <label><input type="radio" name="quiz-mode" id="mode-input" value="input" checked> 入力モード</label>
-            <label><input type="radio" name="quiz-mode" id="mode-select" value="select"> 選択モード</label>
-          </span>
+        </div>
+        <div class="form-row" style="margin-bottom:0.5em;">
+          <div class="card-radio-group">
+            <label class="custom-radio">
+              <input type="radio" name="quiz-mode" id="mode-input" value="input" checked>
+              <span class="radio-mark"></span>
+              <span class="radio-label">入力モード</span>
+            </label>
+            <label class="custom-radio">
+              <input type="radio" name="quiz-mode" id="mode-select" value="select">
+              <span class="radio-mark"></span>
+              <span class="radio-label">選択モード</span>
+            </label>
+          </div>
         </div>
         <div class="form-row">
           <label for="room-count" class="range-label">出題問題数</label>
@@ -125,8 +135,8 @@
 
       <div style="height:0.4em;"></div>
       <button id="buzzBtn" class="buzz-btn">早押し！</button>
-      <div id="choice-area" class="hidden" style="display:flex; flex-direction:column; gap:0.7em; margin:1.2em 0;"></div>
       <div id="status" class="status"></div>
+      <div id="choice-area" class="hidden" style="display:flex; flex-direction:column; gap:0.7em; margin:1.2em 0;"></div>
 
       <div id="answer-area" class="answer-area hidden">
         <div class="answer-controls">

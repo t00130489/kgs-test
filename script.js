@@ -1194,3 +1194,8 @@ function getAnswerDisplay(ans, timedOut) {
   if (ans === '') return '（空欄）';
   return ans;
 }
+
+// statusElにテキストをセット。空の場合は全角スペースで高さ維持
+function setStatus(text) {
+  statusEl.textContent = text && text.trim() ? text : '　';
+}
