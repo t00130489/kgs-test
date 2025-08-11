@@ -1,11 +1,11 @@
 {
   "name": "興学思想 早押しクイズバトル",
-  "short_name": "クイズバトル",
-  "start_url": "./?v=11-2",
+  "short_name": "興学思想クイズ",
+  "start_url": "./?v=11-3",
   "display": "standalone",
   "background_color": "#f5f5f5",
   "theme_color": "#1976d2",
-  "description": "興学思想の早押しクイズが楽しめるPWAアプリです。",
+  "description": "興学思想の早押しクイズアプリです。",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
