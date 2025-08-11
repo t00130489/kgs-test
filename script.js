@@ -267,6 +267,8 @@ let roomModeValue = 'input'; // ルームのモード（input/select）
 let pressedCorrectButLost = false; // 選択肢正解ボタンを押したが一着でなかった場合のフラグ
 let alreadyScoredForThisQuestion = false; // 1問で複数回スコア加算しないためのフラグ
 let alreadyHandledCorrectEvent = false; // 1問で正解イベント処理を1回だけ行う
+// 問題インデックス単位で正解イベントを一度だけ画面遷移処理するためのセット
+let handledCorrectFor = new Set();
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -428,45 +430,38 @@ function watchIndex(){
     questionLabelEl.textContent = `${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
+  // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
+  alreadyHandledCorrectEvent = false;
+  alreadyScoredForThisQuestion = false;
+  pressedCorrectButLost = false;
+  answered = false;
+  flowStarted = false;
+  clearTimers();
+  // （旧問題のタイピング進捗監視解除は clearTimers でtypeInterval解除済）
   });
 }
 function watchEvents(){
   onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
     const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     allEvents.push(ev);
-    // --- 正解イベント多重処理防止 ---
+    // --- 正解イベント処理 ---
     if(ev.correct){
-      if (alreadyHandledCorrectEvent && ev.questionIndex === idx) return;
-      alreadyHandledCorrectEvent = true;
+      // 既にこの問題の正解イベントを処理済みならUI遷移のみ抑制（スコア等はawardsで防止）
+      if (handledCorrectFor.has(ev.questionIndex)) return;
+      handledCorrectFor.add(ev.questionIndex);
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
-      // --- 一着でなかった自分が正解ボタンを押していた場合の表示分岐 ---
-      if (roomModeValue === 'select' && ev.nick !== myNick) {
-        // 自分が正解ボタンを押していたか判定
-        if (allEvents.some(e => e.questionIndex === idx && e.nick === myNick && e.type === 'selectCorrect')) {
-          if (!pressedCorrectButLost) {
-            statusEl.textContent = `${ev.nick} さんが先に正解しました…`;
-            pressedCorrectButLost = true;
-          }
-          // 上書き防止: 以降の正解イベントではstatusElを書き換えない
-          return;
-        } else if (!pressedCorrectButLost) {
-          statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      // --- スコア加算をDB側トランザクション & 重複防止アワード制御 ---
+      const awardRef = ref(db, `rooms/${roomId}/awards/${ev.questionIndex}/${ev.nick}`);
+      runTransaction(awardRef, current => {
+        if (current === null) return true; // 初回のみtrueをセット
+        return; // 以降は非コミット
+      }).then(res => {
+        if(res.committed){
+          runTransaction(ref(db, `rooms/${roomId}/scores/${ev.nick}`), cur => (cur||0)+1);
         }
-      } else if (ev.nick === myNick) {
-        statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-        // スコア加算（1問1回のみ）
-        if (!alreadyScoredForThisQuestion) {
-          alreadyScoredForThisQuestion = true;
-          const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
-          get(sr).then(snap => {
-            const prev = snap.exists() ? snap.val() : 0;
-            set(sr, prev + 1);
-          });
-        }
-      } else {
-        statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      }
+      });
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
