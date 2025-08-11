@@ -437,6 +437,14 @@ function watchIndex(){
   answered = false;
   flowStarted = false;
   clearTimers();
+    // 選択モードでは即座に旧選択肢を消しておく（カウントダウン中に表示残りを防止）
+    if (roomModeValue === 'select') {
+      if (choiceArea) {
+        Array.from(choiceArea.children).forEach(b=>b.disabled=true);
+        choiceArea.classList.add('hidden');
+        choiceArea.innerHTML='';
+      }
+    }
   // （旧問題のタイピング進捗監視解除は clearTimers でtypeInterval解除済）
   });
 }
@@ -689,6 +697,11 @@ function startPreCountdown(startTs){
   document.getElementById('question').style.display = 'none';
   document.getElementById('question-timer').style.display = 'none';
   nextBtn.disabled=true;
+  // 選択モード時：カウントダウン表示中は選択肢を隠しておく（ホスト以外で残留する不具合対策）
+  if (roomModeValue === 'select' && choiceArea) {
+    Array.from(choiceArea.children).forEach(b=>b.disabled=true);
+    choiceArea.classList.add('hidden');
+  }
   // キャプションを消す
   // キャプションとラップを消す
   if (document.getElementById('host-caption')) hostCaption.remove();
