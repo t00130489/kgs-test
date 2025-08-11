@@ -125,6 +125,13 @@ roomIdInput.addEventListener('input', () => {
     roomIdInput.classList.remove('valid-input');
   }
 });
+// Enter キーで参加ボタンを押下可能に
+roomIdInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !joinRoomBtn.disabled) {
+    e.preventDefault();
+    joinRoomBtn.click();
+  }
+});
 window.addEventListener('DOMContentLoaded', () => {
   roomIdInput.classList.remove('valid-input');
   roomCountInput.classList.remove('valid-input');
@@ -771,6 +778,9 @@ function startPreCountdown(startTs){
 // タイプ制御
 let typePos=0, currentText='';
 let typeSyncRef = null;
+// --- typePosバッチ送信用 ---
+let typePosSendBuffer = null;
+let typePosBatchTimer = null;
 function showQuestion(){
   // 旧リスナー解除
   if (detachTypeSync) { try { detachTypeSync(); } catch(e) {} detachTypeSync = null; }
@@ -791,14 +801,25 @@ function showQuestion(){
       questionEl.textContent += currentText[typePos++];
       if (myNick === Object.keys(players)[0]) {
         if (typePos > lastTypePos) {
-          set(typeSyncRef, typePos);
-          lastTypePos = typePos;
+          // バッファに最新値を保存
+          typePosSendBuffer = typePos;
         }
       }
     } else {
       clearInterval(window._typeInt);
     }
   }, TEXT.typeSpeed);
+  // --- バッチ送信タイマー ---
+  if (typePosBatchTimer) clearInterval(typePosBatchTimer);
+  if (myNick === Object.keys(players)[0]) {
+    typePosBatchTimer = setInterval(() => {
+      if (typePosSendBuffer !== null) {
+        set(typeSyncRef, typePosSendBuffer);
+        typePosSendBuffer = null;
+      }
+    }, 200);
+  }
+  if (typePosBatchTimer) { clearInterval(typePosBatchTimer); typePosBatchTimer = null; }
   if (myNick !== Object.keys(players)[0]) {
     detachTypeSync = onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;

@@ -2,7 +2,7 @@
 // 単一箇所でアプリバージョンを管理。ブラウザ & Service Worker 共通利用。
 // バージョンを更新する際はこの値のみを書き換える。
 (function(global){
-  const APP_VERSION = '811-m';
+  const APP_VERSION = '812-1';
   global.APP_VERSION = APP_VERSION;
   if (typeof window !== 'undefined') {
     // 早期アクセス用にコンソール表示
