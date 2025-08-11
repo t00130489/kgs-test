@@ -84,6 +84,9 @@ const createBtn   = document.getElementById('createBtn');
 const joinRoomBtn = document.getElementById('joinRoomBtn');
 const roomIdInput = document.getElementById('roomIdInput');
 joinRoomBtn.disabled = true;
+// モード選択ラジオボタン取得
+const modeInputRadio = document.getElementById('mode-input');
+const modeSelectRadio = document.getElementById('mode-select');
 
 
 // バリデーション用エラー表示
@@ -132,6 +135,7 @@ const roomCount   = document.getElementById('room-count');
 const roomRange   = document.getElementById('room-range');
 const currentNum  = document.getElementById('currentNum');
 const totalNum    = document.getElementById('totalNum');
+const roomMode    = document.getElementById('room-mode');
 const playersUl   = document.getElementById('players');
 const statusEl    = document.getElementById('status');
 const preCd       = document.getElementById('pre-countdown');
@@ -144,6 +148,7 @@ const answerBtn   = document.getElementById('answerBtn');
 const aTimerEl    = document.getElementById('answer-timer');
 const nextBtn     = document.getElementById('nextBtn');
 const startBtn    = document.getElementById('startBtn');
+const choiceArea  = document.getElementById('choice-area');
 
 // ホスト用キャプション
 const hostCaption = document.createElement('div');
@@ -258,6 +263,12 @@ let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
 const allEvents = [];
 let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
+let roomModeValue = 'input'; // ルームのモード（input/select）
+let pressedCorrectButLost = false; // 選択肢正解ボタンを押したが一着でなかった場合のフラグ
+let alreadyScoredForThisQuestion = false; // 1問で複数回スコア加算しないためのフラグ
+let alreadyHandledCorrectEvent = false; // 1問で正解イベント処理を1回だけ行う
+// 問題インデックス単位で正解イベントを一度だけ画面遷移処理するためのセット
+let handledCorrectFor = new Set();
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -325,13 +336,32 @@ function onQuestionTimeout(){
   nextBtn.disabled = false;
   startNextBtnCountdown();
   remove(ref(db, `rooms/${roomId}/buzz`));
+  // 選択モード時のUI
+  if (roomModeValue === 'select') {
+    Array.from(choiceArea.children).forEach(b => {
+      if (b.dataset.isAnswer === '1') {
+        b.classList.add('btn-danger');
+      } else {
+        b.classList.add('disabled-btn');
+      }
+      b.disabled = true;
+    });
+  }
 }
 
 // 初期状態
 createBtn.disabled = true;
 answerArea.classList.add('hidden');
 answerBtn.disabled = true;
-buzzBtn.disabled = true; buzzBtn.classList.add('disabled-btn');
+if (typeof roomModeValue === 'undefined') roomModeValue = 'input';
+if (roomModeValue === 'select') {
+  buzzBtn.style.display = 'none';
+  choiceArea.classList.add('hidden');
+} else {
+  buzzBtn.disabled = true; buzzBtn.classList.add('disabled-btn');
+  buzzBtn.style.display = '';
+  choiceArea.classList.add('hidden');
+}
 startBtn.style.display = 'none';
 qTimerEl.style.display = 'none';
 aTimerEl.style.display = 'none';
@@ -385,6 +415,10 @@ function watchSettings(){
     const s = snap.val()||{};
     roomRange.textContent = (s.chapters||[]).map(c=>["序章","第一章","第二章","第三章","第四章","第五章","第六章","第七章"][c]).join('、');
     totalNum.textContent = s.count||0;
+    // モード表示
+    if (roomMode) {
+      roomMode.textContent = s.mode === 'select' ? '選択' : '入力';
+    }
   });
 }
 function watchSequence(){
@@ -396,22 +430,56 @@ function watchIndex(){
     questionLabelEl.textContent = `${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
+  // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
+  alreadyHandledCorrectEvent = false;
+  alreadyScoredForThisQuestion = false;
+  pressedCorrectButLost = false;
+  answered = false;
+  flowStarted = false;
+  clearTimers();
+  // （旧問題のタイピング進捗監視解除は clearTimers でtypeInterval解除済）
   });
 }
 function watchEvents(){
   onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
     const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     allEvents.push(ev);
+    // --- 正解イベント処理 ---
     if(ev.correct){
+      // 既にこの問題の正解イベントを処理済みならUI遷移のみ抑制（スコア等はawardsで防止）
+      if (handledCorrectFor.has(ev.questionIndex)) return;
+      handledCorrectFor.add(ev.questionIndex);
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      // --- スコア加算をDB側トランザクション & 重複防止アワード制御 ---
+      const awardRef = ref(db, `rooms/${roomId}/awards/${ev.questionIndex}/${ev.nick}`);
+      runTransaction(awardRef, current => {
+        if (current === null) return true; // 初回のみtrueをセット
+        return; // 以降は非コミット
+      }).then(res => {
+        if(res.committed){
+          runTransaction(ref(db, `rooms/${roomId}/scores/${ev.nick}`), cur => (cur||0)+1);
+        }
+      });
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
       aTimerEl.style.display = 'none';
       nextBtn.disabled = false; updateBuzzState();
       startNextBtnCountdown();
+      // 選択肢モード時のUI
+      if (roomModeValue === 'select') {
+        // 正解ボタンのみ色変更
+        Array.from(choiceArea.children).forEach(b => {
+          if (b.dataset.isAnswer === '1') {
+            b.classList.add('btn-danger');
+          } else {
+            b.classList.add('disabled-btn');
+          }
+          b.disabled = true;
+        });
+      }
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       clearTimers();
       const disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
@@ -481,16 +549,31 @@ createBtn.addEventListener('click',async()=>{
   if(!quizData.length){ alert('読み込み中…'); return; }
   const chs=[...chapterCbs].filter(cb=>cb.checked).map(cb=>+cb.value);
   const cnt=parseInt(roomCount.value,10);
+  // モード取得
+  const mode = modeInputRadio.checked ? 'input' : 'select';
+  roomModeValue = mode; // ここでグローバル変数にもセット
   if(!chs.length||cnt<1){ alert('範囲と数を指定'); return; }
   const nick = await showNicknameModal();
   if(!nick) return;
   myNick=nick; joinTs=getServerTime(); roomId=await genId();
-  await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,createdAt:getServerTime()});
+  await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime()});
   const pool = quizData.filter(q=>chs.includes(+q.chapter));
   // Fisher-Yatesシャッフル
   for(let i=pool.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
     [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  // 選択肢順同期用: 各問題にchoicesOrderを付与
+  if (mode === 'select') {
+    pool.forEach(q => {
+      // 0:answer, 1:ng1, 2:ng2, 3:ng3, 4:ng4
+      let order = [0,1,2,3,4];
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      q.choicesOrder = order;
+    });
   }
   sequence=pool.slice(0,cnt);
   await set(ref(db,`rooms/${roomId}/sequence`),sequence);
@@ -513,6 +596,14 @@ createBtn.addEventListener('click',async()=>{
   if (document.getElementById('wait-caption')) {
     waitCaption.remove();
   }
+  // ここで選択モードならbuzzBtnを非表示
+  if (roomModeValue === 'select') {
+    buzzBtn.style.display = 'none';
+    choiceArea.classList.add('hidden');
+  } else {
+    buzzBtn.style.display = '';
+    choiceArea.classList.add('hidden');
+  }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
   watchEvents(); watchBuzz(); watchPreStart();
@@ -525,6 +616,10 @@ joinRoomBtn.addEventListener('click',async()=>{
   const snap=await get(child(ref(db,'rooms'),inputId));
   if(!snap.exists()){ alert('ルームが存在しません'); return; }
   roomId=inputId;
+  // ルームのモード取得
+  const settingsSnap = await get(ref(db,`rooms/${roomId}/settings`));
+  const settingsObj = settingsSnap.val() || {};
+  roomModeValue = settingsObj.mode || 'input';
   const nick = await showNicknameModal();
   if(!nick) return;
   // 既存参加者と同じニックネームは不可
@@ -549,6 +644,14 @@ joinRoomBtn.addEventListener('click',async()=>{
   }
   if (document.getElementById('host-caption-wrap')) {
     document.getElementById('host-caption-wrap').remove();
+  }
+  // ここで選択モードならbuzzBtnを非表示
+  if (roomModeValue === 'select') {
+    buzzBtn.style.display = 'none';
+    choiceArea.classList.add('hidden');
+  } else {
+    buzzBtn.style.display = '';
+    choiceArea.classList.add('hidden');
   }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
@@ -625,7 +728,6 @@ function showQuestion(){
   currentText = sequence[idx].question; typePos = 0;
   questionEl.textContent = '';
   questionEl.style.visibility = 'visible';
-  // カードブロックを表示、カウントダウン非表示、問題文・タイマー表示
   questionCardBlock.classList.remove('hidden');
   document.getElementById('pre-countdown').style.display = 'none';
   document.getElementById('question').style.display = 'block';
@@ -636,13 +738,11 @@ function showQuestion(){
   // タイプ進捗同期用リファレンス
   if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
   typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
-  // ホストが進捗を送信
   let lastTypePos = 0;
   window._typeInt = setInterval(() => {
     if (typePos < currentText.length) {
       questionEl.textContent += currentText[typePos++];
-      // 進捗をDBに反映（1文字進むごと）
-      if (myNick === Object.keys(players)[0]) { // ホストのみ書き込み
+      if (myNick === Object.keys(players)[0]) {
         if (typePos > lastTypePos) {
           set(typeSyncRef, typePos);
           lastTypePos = typePos;
@@ -652,12 +752,10 @@ function showQuestion(){
       clearInterval(window._typeInt);
     }
   }, TEXT.typeSpeed);
-  // 参加者は進捗を監視
   if (myNick !== Object.keys(players)[0]) {
     onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;
       if (synced > typePos && typePos < currentText.length) {
-        // 足りない分を一気に表示
         questionEl.textContent += currentText.slice(typePos, synced);
         typePos = synced;
       }
@@ -666,7 +764,125 @@ function showQuestion(){
   currentNum.textContent=idx+1;
   clearInterval(window._qInt); qTimerEl.style.display='block';
   questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit;
-  window._qInt=setInterval(tickQ,100); updateBuzzState();
+  window._qInt=setInterval(tickQ,100); 
+  // --- 選択モード分岐 ---
+  if (roomModeValue === 'select') {
+    buzzBtn.style.display = 'none';
+    answerArea.classList.add('hidden');
+    choiceArea.classList.remove('hidden');
+    // 選択肢生成（answer, ng1～ng4）
+    const q = sequence[idx];
+    let baseChoices = [q.answer, q.ng1, q.ng2, q.ng3, q.ng4];
+    let choices;
+    if (q.choicesOrder && Array.isArray(q.choicesOrder) && q.choicesOrder.length === 5) {
+      choices = q.choicesOrder.map(i => ({c: baseChoices[i], i}));
+    } else {
+      // 旧データや入力モード用: ローカルシャッフル
+      choices = baseChoices.map((c, i) => ({c, i}));
+      for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+      }
+    }
+    // 選択肢一着判定用のリセット
+    if (roomModeValue === 'select') {
+      // 問題ごとに一着判定用のselectBuzzをリセット
+      remove(ref(db, `rooms/${roomId}/selectBuzz`));
+    }
+    choiceArea.innerHTML = '';
+    choices.forEach((obj, idxChoice) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn-primary';
+      btn.textContent = obj.c;
+      btn.style.fontSize = '1.15em';
+      btn.style.padding = '0.7em 0.5em';
+      btn.style.marginBottom = '0.2em';
+      btn.dataset.choiceIdx = obj.i;
+      btn.dataset.isAnswer = (obj.i === 0 ? '1' : '0');
+      btn.disabled = false;
+      // 選択肢ボタン押下時の処理
+      btn.addEventListener('click', async (e) => {
+        if (btn.disabled) return;
+        // 正解ボタン
+        if (btn.dataset.isAnswer === '1') {
+          // 一着判定（トランザクション）
+          const selectRef = ref(db, `rooms/${roomId}/selectBuzz`);
+          btn.disabled = true;
+          btn.classList.add('disabled-btn');
+          // 楽観的UI
+          statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
+          await runTransaction(selectRef, current => {
+            if (current === null) {
+              return {
+                nick: myNick,
+                time: getServerTime()
+              };
+            }
+            return;
+          }).then(async result => {
+            if (!result.committed) {
+              // 失敗時ロールバック
+              // 先に押した人の名前を取得して表示
+              get(selectRef).then(snap => {
+                const selectData = snap.val();
+                const who = selectData && selectData.nick ? selectData.nick : '誰か';
+                if (who === myNick) {
+                  statusEl.textContent = `正解！🎉`;
+                  showFeedback(true);
+                } else {
+                  statusEl.textContent = `${who} さんが先に押しました…`;
+                }
+                // 全ボタン無効化
+                Array.from(choiceArea.children).forEach(b => b.disabled = true);
+              });
+            } else {
+              // 一着で正解した場合
+              statusEl.textContent = `正解！🎉`;
+              showFeedback(true);
+              Array.from(choiceArea.children).forEach(b => b.disabled = true);
+              // 正解イベント送信
+              await push(ref(db, `rooms/${roomId}/events`), {
+                nick: myNick,
+                correct: true,
+                guess: btn.textContent,
+                answer: sequence[idx].answer,
+                questionIndex: idx,
+                timestamp: getServerTime(),
+                type: 'selectCorrect'
+              });
+              // タイマー停止・次の問題へボタン有効化等はwatchEventsで処理
+            }
+          });
+        } else {
+          // 誤答ボタン
+          btn.disabled = true;
+          btn.classList.add('disabled-btn');
+          btn.style.background = '#e0e0e0';
+          btn.style.color = '#888';
+          // 不正解フィードバック
+          showFeedback(false);
+          // 全ボタン無効化
+          Array.from(choiceArea.children).forEach(b => b.disabled = true);
+          // イベント送信
+          await push(ref(db, `rooms/${roomId}/events`), {
+            nick: myNick,
+            correct: false,
+            guess: btn.textContent,
+            answer: sequence[idx].answer,
+            questionIndex: idx,
+            timestamp: getServerTime(),
+            type: 'wrongGuess'
+          });
+          await set(ref(db,`rooms/${roomId}/wrongAnswers/${myNick}`), true);
+        }
+      });
+      choiceArea.appendChild(btn);
+    });
+  } else {
+    buzzBtn.style.display = '';
+    choiceArea.classList.add('hidden');
+    updateBuzzState();
+  }
 }
 function pauseTypewriter(){ clearInterval(window._typeInt); }
 function resumeTypewriter(){
@@ -845,11 +1061,7 @@ async function submitAnswer() {
   await push(ref(db, `rooms/${roomId}/events`), ev);
 
   if (isCorrect) {
-    // 正解処理
-    const sr = ref(db, `rooms/${roomId}/scores/${myNick}`);
-    const snap = await get(sr), prev = snap.exists() ? snap.val() : 0;
-    await set(sr, prev + 1);
-
+    // 正解処理（スコア加算はwatchEventsで行う）
     clearTimers();
     answered = true;
     flowStarted = false;
@@ -896,6 +1108,13 @@ nextBtn.addEventListener('click', async () => {
   qTimerEl.style.display = 'none';
   aTimerEl.style.display = 'none';
   questionLabelEl.style.visibility = 'hidden';
+  if (choiceArea) {
+    choiceArea.classList.add('hidden');
+    choiceArea.innerHTML = '';
+  }
+  pressedCorrectButLost = false;
+  alreadyScoredForThisQuestion = false;
+  alreadyHandledCorrectEvent = false;
   if (idx + 1 < sequence.length) {
     await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
     await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
@@ -969,4 +1188,9 @@ function getAnswerDisplay(ans, timedOut) {
   if (timedOut) return '時間切れ';
   if (ans === '') return '（空欄）';
   return ans;
+}
+
+// statusElにテキストをセット。空の場合は全角スペースで高さ維持
+function setStatus(text) {
+  statusEl.textContent = text && text.trim() ? text : '　';
 }

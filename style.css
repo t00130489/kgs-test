@@ -460,8 +460,10 @@ button {
 button:hover:not(:disabled) { transform: translateY(-1px); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-secondary { background: var(--secondary); color: #fff; }
+.btn-primary, .btn-secondary {
+  background: var(--primary);
+  color: #fff;
+}
 .btn-primary.small { padding: 0.6rem 1rem; font-size: 1rem; }
 .btn-primary.large { padding: 1.2rem 2rem; font-size: 1.6rem; }
 .btn-danger {
@@ -500,7 +502,16 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .buzz-btn:hover:not(:disabled) { transform: translateY(-1px); }
 
-.status { font-size: 1.2rem; font-weight: bold; margin: 0.8rem 0; }
+.status {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin: 0.4rem 0;
+  min-height: 2em;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
 
 .answer-area {
   display: flex;
@@ -670,3 +681,86 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   box-shadow: 0 0 0 2px #90caf9 !important;
   background: #e3f2fd !important;
 }
+
+/* モード選択ラジオボタンのスタイリッシュデザイン */
+.card-radio-group {
+  display: flex;
+  flex-direction: row;
+  gap: 2em;
+  margin: 0.5em 0 0.5em 0;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 0.5em;
+}
+.custom-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  cursor: pointer;
+  font-size: 1.13em;
+  font-weight: 500;
+  color: #2a3a5e;
+  position: relative;
+  padding: 0.2em 0.5em;
+  border-radius: 8px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.custom-radio input[type="radio"] {
+  opacity: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  pointer-events: none;
+}
+.custom-radio input[type="radio"]:checked {
+  border-color: #1976d2;
+  background: #1976d2;
+}
+.custom-radio input[type="radio"]:checked + .radio-mark {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+.radio-mark {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #1976d2;
+  border-radius: 50%;
+  background: #fff;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+.custom-radio input[type="radio"]:checked + .radio-mark::after {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+.radio-label {
+  font-size: 1.08em;
+  color: #2a3a5e;
+  font-weight: 500;
+  user-select: none;
+  font-family: inherit;
+}
+.custom-radio:hover, .custom-radio input[type="radio"]:focus {
+  background: #e3f2fd;
+  box-shadow: 0 0 0 2px #90caf9;
+}
+
+/* --- ルーム作成カードブロックの余白調整 ---
+   .card.home-card の margin-bottom, padding-bottom でカード下部の余白を調整
+   .card の padding, margin-top, margin-bottom でカード全体の余白を調整
+   .form-row の margin でフォーム各行の上下余白を調整
+   .card-radio-group の margin でモード選択部分の余白を調整
+   .styled-chapter-grid の padding, gap で出題範囲チェック群の余白を調整
+   .home-btn の margin-top でボタンの余白を調整
+--- */
