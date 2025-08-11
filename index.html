@@ -7,7 +7,17 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>興学思想テスト早押しクイズバトル</title>
-  <link rel="stylesheet" href="style.css?v=11-3">
+  <script src="version.js"></script>
+  <script>
+    // version.js で設定された APP_VERSION を使用してCSSを動的ロード
+    (function(){
+      const v = window.APP_VERSION;
+      const l = document.createElement('link');
+      l.rel='stylesheet';
+      l.href = 'style.css?v=' + encodeURIComponent(v);
+      document.write(l.outerHTML); // 初期描画タイミングで挿入
+    })();
+  </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEP0467K9D"></script>
   <script>
@@ -98,7 +108,7 @@
           <li>揃ったらホストが問題スタート！</li>
         </ol>
         <p class="desc-note"><br>【入力モード】<br>答えをキーボードで入力する形式です。<br><br>【選択モード】<br>本番同様、5択の選択肢から選ぶ形式です。<br><br>PKG南大沢校　髙橋悠並</p>
-        <div class="version-info">v11-2</div>
+  <div class="version-info" id="app-version-label"></div>
       </section>
     </section>
 
@@ -152,6 +162,19 @@
   <!-- フィードバックオーバーレイ -->
   <div id="feedback-overlay" class="feedback-overlay hidden"></div>
 
-  <script type="module" src="script.js?v=11-3"></script>
+  <script>
+    // バージョンラベル描画
+    window.addEventListener('DOMContentLoaded',()=>{
+      const el=document.getElementById('app-version-label');
+      if(el) el.textContent='v'+window.APP_VERSION;
+    });
+  </script>
+  <script type="module">
+    import { APP_VERSION } from './version.js';
+    const s = document.createElement('script');
+    s.type='module';
+    s.src = 'script.js?v=' + encodeURIComponent(APP_VERSION);
+    document.head.appendChild(s);
+  </script>
 </body>
 </html>
