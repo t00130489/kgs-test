@@ -401,18 +401,25 @@ get(ref(db,'questions')).then(snap => {
 });
 
 // ウォッチャー
+function updatePlayerList(){
+  playersUl.innerHTML='';
+  Object.keys(players).forEach(nick=>{
+    const li = document.createElement('li');
+    li.textContent = `${nick} (${scores[nick]||0}問正解)`;
+    playersUl.appendChild(li);
+  });
+}
 function watchPlayers(){
   onValue(ref(db,`rooms/${roomId}/players`), snap=>{
-    players = snap.val()||{}; playersUl.innerHTML='';
-    Object.keys(players).forEach(nick=>{
-      const li = document.createElement('li');
-      li.textContent = `${nick} (${scores[nick]||0}問正解)`;
-      playersUl.appendChild(li);
-    });
+    players = snap.val()||{};
+    updatePlayerList();
   });
 }
 function watchScores(){
-  onValue(ref(db,`rooms/${roomId}/scores`), snap=>{ scores = snap.val()||{}; watchPlayers(); });
+  onValue(ref(db,`rooms/${roomId}/scores`), snap=>{
+    scores = snap.val()||{};
+    updatePlayerList();
+  });
 }
 function watchWrongs(){
   onValue(ref(db,`rooms/${roomId}/wrongAnswers`), snap=>{
@@ -481,11 +488,8 @@ function watchEvents(){
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が awards トランザクションを確定後に行う。
-      // 体感即時性のためローカルで一時的に scores を楽観的更新（サーバ更新が来たら上書きされる）。
-      if (!scores[ev.nick]) scores[ev.nick] = 0;
-      scores[ev.nick] += 1;
-      watchPlayers(); // プレイヤー一覧再描画（スコア表示更新のため）
+      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) に任せ、
+      // scores の同期は watchScores() で行う。
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -624,6 +628,7 @@ createBtn.addEventListener('click',async()=>{
   await set(ref(db,`rooms/${roomId}/currentIndex`),0);
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  await runTransaction(ref(db,`rooms/${roomId}/scores/${myNick}`), cur => cur === null ? 0 : cur);
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -679,6 +684,7 @@ joinRoomBtn.addEventListener('click',async()=>{
   myNick=nick; joinTs=getServerTime();
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  await runTransaction(ref(db,`rooms/${roomId}/scores/${myNick}`), cur => cur === null ? 0 : cur);
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -1225,24 +1231,13 @@ async function showResults(){
     get(ref(db,`rooms/${roomId}/events`))
   ]);
   players = ps.val() || {};
+  scores = sc.val() || {};
   const eventsObj = evSnap.val() || {};
   const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
-  // events から正解数を再集計
-  const eventScores = {};
-  eventsArr.forEach(ev => {
-    if (ev.correct && ev.nick) {
-      eventScores[ev.nick] = (eventScores[ev.nick] || 0) + 1;
-    }
-  });
-  // DBのscoresも fallback で参照
-  scores = sc.val() || {};
-  Object.keys(scores).forEach(nick => {
-    if (!(nick in eventScores)) eventScores[nick] = scores[nick] || 0;
-  });
-  const scoreValues = Object.values(eventScores).map(v => v || 0);
+  const scoreValues = Object.values(scores).map(v => v || 0);
   const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
   const winners = maxScore > 0
-    ? Object.keys(eventScores).filter(nick => (eventScores[nick] || 0) === maxScore)
+    ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
     : [];
 
   let html = `<h2>${TEXT.labels.resultsTitle}</h2>`;
@@ -1253,7 +1248,7 @@ async function showResults(){
   }
   html += `<h3>${TEXT.labels.participantsHeader}</h3><ul>`;
   Object.keys(players).forEach(nick => {
-    const score = eventScores[nick] || 0;
+    const score = scores[nick] || 0;
     const cls = winners.includes(nick) ? ' class="winner"' : '';
     html += `<li${cls}>${nick}：${score}問正解</li>`;
   });
