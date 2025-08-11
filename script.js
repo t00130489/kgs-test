@@ -106,9 +106,11 @@ roomCountInput.addEventListener('input', () => {
   if (!val.match(/^[0-9]{1,3}$/) || val < 1 || val > 999) {
     showInputError(roomCountInput, '1～999の数字を入力してください');
     createBtn.disabled = true;
+  roomCountInput.classList.remove('valid-input');
   } else {
     showInputError(roomCountInput, '');
     createBtn.disabled = false;
+  roomCountInput.classList.add('valid-input');
   }
 });
 roomIdInput.addEventListener('input', () => {
@@ -125,6 +127,7 @@ roomIdInput.addEventListener('input', () => {
 });
 window.addEventListener('DOMContentLoaded', () => {
   roomIdInput.classList.remove('valid-input');
+  roomCountInput.classList.remove('valid-input');
 });
 const homeDiv     = document.getElementById('home');
 const quizAppDiv  = document.getElementById('quiz-app');
