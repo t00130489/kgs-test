@@ -84,8 +84,9 @@
   background: #f7faff;
 }
 
-/* ルームID欄が入力ミス（空欄以外でinvalid）の場合のみ赤枠 */
-#roomIdInput.styled-input:not(:placeholder-shown):invalid {
+/* ルームID / 出題問題数 が invalid の場合は赤枠（placeholder表示中を除く） */
+#roomIdInput.styled-input:not(:placeholder-shown):invalid,
+#room-count.styled-input:not(:placeholder-shown):invalid {
   border-color: #e53935;
   background: #fff5f5;
 }

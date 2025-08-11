@@ -59,8 +59,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebas
 import {
   getDatabase, ref, set, push,
   onValue, onChildAdded, remove,
-  get, child,
-  runTransaction
+  get, child, update,
+  runTransaction, onDisconnect
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
 
 initializeApp({
@@ -106,9 +106,11 @@ roomCountInput.addEventListener('input', () => {
   if (!val.match(/^[0-9]{1,3}$/) || val < 1 || val > 999) {
     showInputError(roomCountInput, '1～999の数字を入力してください');
     createBtn.disabled = true;
+  roomCountInput.classList.remove('valid-input');
   } else {
     showInputError(roomCountInput, '');
     createBtn.disabled = false;
+  roomCountInput.classList.add('valid-input');
   }
 });
 roomIdInput.addEventListener('input', () => {
@@ -125,6 +127,7 @@ roomIdInput.addEventListener('input', () => {
 });
 window.addEventListener('DOMContentLoaded', () => {
   roomIdInput.classList.remove('valid-input');
+  roomCountInput.classList.remove('valid-input');
 });
 const homeDiv     = document.getElementById('home');
 const quizAppDiv  = document.getElementById('quiz-app');
@@ -273,6 +276,7 @@ let handledCorrectFor = new Set();
 // 追加: 早押し中断での残り時間とタイプ同期解除関数
 let pausedRemainingQTime = null; // 秒
 let detachTypeSync = null; // onValue の unsubscribe
+let heartbeatTimer = null; // 接続維持用ハートビート
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -554,6 +558,22 @@ async function genId(){
   return id;
 }
 
+// ハートビート開始（lastActive 更新）
+function startHeartbeat(){
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(()=>{
+    if (!roomId || !myNick) return;
+    set(ref(db,`rooms/${roomId}/players/${myNick}/lastActive`), getServerTime()).catch(()=>{});
+  },15000); // 15秒間隔
+}
+
+// ビジビリティで即時反映
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && roomId && myNick){
+    set(ref(db,`rooms/${roomId}/players/${myNick}/lastActive`), getServerTime()).catch(()=>{});
+  }
+});
+
 // ルーム作成
 createBtn.addEventListener('click',async()=>{
   if(!quizData.length){ alert('読み込み中…'); return; }
@@ -588,7 +608,10 @@ createBtn.addEventListener('click',async()=>{
   sequence=pool.slice(0,cnt);
   await set(ref(db,`rooms/${roomId}/sequence`),sequence);
   await set(ref(db,`rooms/${roomId}/currentIndex`),0);
-  await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
+  const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
+  await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  try { onDisconnect(playerRef).remove(); } catch(e) {}
+  startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
   currentRoom.textContent=roomId; startBtn.style.display='block';
   // ホスト用キャプションとボタンを縦並び中央揃えでラップ
@@ -640,7 +663,10 @@ joinRoomBtn.addEventListener('click',async()=>{
     return;
   }
   myNick=nick; joinTs=getServerTime();
-  await set(ref(db,`rooms/${roomId}/players/${myNick}`),{joinedAt:joinTs});
+  const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
+  await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  try { onDisconnect(playerRef).remove(); } catch(e) {}
+  startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
   currentRoom.textContent=roomId;
   // 早押しボタンの上に参加者用キャプションを挿入
@@ -1136,11 +1162,16 @@ async function showResults(){
   quizAppDiv.classList.add('hidden');
   resultsDiv.classList.remove('hidden');
   allowUnload = true;
-
-  const ps = await get(ref(db,`rooms/${roomId}/players`));
-  const sc = await get(ref(db,`rooms/${roomId}/scores`));
+  // 最新プレイヤー/スコア/イベントを取得（途中参加対策でリアルタイム蓄積に依存しない）
+  const [ps, sc, evSnap] = await Promise.all([
+    get(ref(db,`rooms/${roomId}/players`)),
+    get(ref(db,`rooms/${roomId}/scores`)),
+    get(ref(db,`rooms/${roomId}/events`))
+  ]);
   players = ps.val() || {};
-  scores = sc.val() || {};
+  scores  = sc.val() || {};
+  const eventsObj = evSnap.val() || {};
+  const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
 
   const scoreValues = Object.values(scores).map(v => v || 0);
   const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
@@ -1163,11 +1194,11 @@ async function showResults(){
   html += `</ul><h3>${TEXT.labels.perQuestionHeader}</h3>`;
   sequence.forEach((q, i) => {
     html += `<div class="result-question-card"><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
-    const win = allEvents.filter(e => e.questionIndex === i && e.correct).map(e => e.nick);
+    const qEvents = eventsArr.filter(e => e.questionIndex === i);
+    const win = qEvents.filter(e=>e.correct).map(e=>e.nick);
     html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
-    const los = allEvents.filter(e => e.questionIndex === i && !e.correct);
-    los.forEach(e => {
-      let disp = '';
+    qEvents.filter(e=>!e.correct).forEach(e=>{
+      let disp='';
       if (e.guess === '' && e.type === 'wrongGuess') disp = '空欄';
       else if (!e.guess || e.guess === '時間切れ' || e.type === 'answerTimeout') disp = '時間切れ';
       else disp = e.guess;
