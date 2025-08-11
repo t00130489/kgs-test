@@ -125,6 +125,13 @@ roomIdInput.addEventListener('input', () => {
     roomIdInput.classList.remove('valid-input');
   }
 });
+// Enter キーで参加ボタンを押下可能に
+roomIdInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !joinRoomBtn.disabled) {
+    e.preventDefault();
+    joinRoomBtn.click();
+  }
+});
 window.addEventListener('DOMContentLoaded', () => {
   roomIdInput.classList.remove('valid-input');
   roomCountInput.classList.remove('valid-input');
@@ -263,6 +270,8 @@ function showFeedback(isCorrect) {
 let quizData = [], sequence = [], idx = 0;
 let myNick = '', roomId = '', joinTs = 0;
 let players = {}, scores = {}, wrongs = {};
+// タイマー表示最適化用（直前表示した残り秒：ceil値）
+let lastDisplayedQSec = null;
 let flowStarted = false, answered = false;
 let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
 const allEvents = [];
@@ -319,10 +328,16 @@ function updateCreateBtn(){
 // 質問タイマー
 function tickQ(){
   if(!flowStarted) return;
-  const elapsed = (getServerTime() - questionStart) / 1000;
-  remainingQTime = Math.max(0, TEXT.questionTimeLimit - elapsed).toFixed(1);
-  qTimerEl.textContent = TEXT.labels.timeoutLabel + remainingQTime + TEXT.labels.secondsSuffix;
-  if(remainingQTime <= 0 && !answered){
+  const now = getServerTime();
+  const elapsedSec = (now - questionStart) / 1000;
+  const remain = Math.max(0, TEXT.questionTimeLimit - elapsedSec);
+  remainingQTime = remain; // float 秒保持
+  const remainInt = Math.ceil(remain);
+  if (lastDisplayedQSec !== remainInt) {
+    lastDisplayedQSec = remainInt;
+    qTimerEl.textContent = TEXT.labels.timeoutLabel + remainInt + TEXT.labels.secondsSuffix;
+  }
+  if(remain <= 0 && !answered){
     clearTimers();
     onQuestionTimeout();
   }
@@ -466,15 +481,11 @@ function watchEvents(){
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      const awardRef = ref(db, `rooms/${roomId}/awards/${ev.questionIndex}/${ev.nick}`);
-      runTransaction(awardRef, current => {
-        if (current === null) return true;
-        return;
-      }).then(res => {
-        if(res.committed){
-          runTransaction(ref(db, `rooms/${roomId}/scores/${ev.nick}`), cur => (cur||0)+1);
-        }
-      });
+      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が awards トランザクションを確定後に行う。
+      // 体感即時性のためローカルで一時的に scores を楽観的更新（サーバ更新が来たら上書きされる）。
+      if (!scores[ev.nick]) scores[ev.nick] = 0;
+      scores[ev.nick] += 1;
+      watchPlayers(); // プレイヤー一覧再描画（スコア表示更新のため）
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -494,8 +505,9 @@ function watchEvents(){
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       // 誤答 / 回答時間切れ: 問題再開。元の questionStart は維持し残り時間補正
       clearTimers();
-      const disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
-      statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+  let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
+  if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
+  statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
       flowStarted = true;
       // pausedRemainingQTime に基づき questionStart を再計算
       if (pausedRemainingQTime != null) {
@@ -517,7 +529,8 @@ function watchEvents(){
         typePos = questionEl.textContent.length;
         resumeTypewriter();
       }
-      window._qInt = setInterval(tickQ,100);
+  lastDisplayedQSec = null;
+  window._qInt = setInterval(tickQ,250);
       pausedRemainingQTime = null; // 再開後クリア
       updateBuzzState();
     }
@@ -530,13 +543,14 @@ function watchBuzz(){
     if(b && flowStarted && !answered){
       flowStarted = false; clearInterval(window._qInt); pauseTypewriter();
       statusEl.textContent = `${b.nick} さんが押しました`;
-      pausedRemainingQTime = parseFloat(remainingQTime); // 中断時の残り時間を記録
+  pausedRemainingQTime = remainingQTime; // 中断時の残り時間を記録 (float 秒)
       if(b.nick===myNick){
         answerArea.classList.remove('hidden'); answerBtn.disabled=false; startAnswerTimer();
       }
       updateBuzzState();
     } else if(!b && flowStarted && !answered){
-      statusEl.textContent=''; answerArea.classList.add('hidden');
+      // コメントは消さず、他UIのみリセット
+      answerArea.classList.add('hidden');
       answerInput.value=''; answerBtn.disabled=true; updateBuzzState();
     }
   });
@@ -764,6 +778,9 @@ function startPreCountdown(startTs){
 // タイプ制御
 let typePos=0, currentText='';
 let typeSyncRef = null;
+// --- typePosバッチ送信用 ---
+let typePosSendBuffer = null;
+let typePosBatchTimer = null;
 function showQuestion(){
   // 旧リスナー解除
   if (detachTypeSync) { try { detachTypeSync(); } catch(e) {} detachTypeSync = null; }
@@ -784,14 +801,25 @@ function showQuestion(){
       questionEl.textContent += currentText[typePos++];
       if (myNick === Object.keys(players)[0]) {
         if (typePos > lastTypePos) {
-          set(typeSyncRef, typePos);
-          lastTypePos = typePos;
+          // バッファに最新値を保存
+          typePosSendBuffer = typePos;
         }
       }
     } else {
       clearInterval(window._typeInt);
     }
   }, TEXT.typeSpeed);
+  // --- バッチ送信タイマー ---
+  if (typePosBatchTimer) clearInterval(typePosBatchTimer);
+  if (myNick === Object.keys(players)[0]) {
+    typePosBatchTimer = setInterval(() => {
+      if (typePosSendBuffer !== null) {
+        set(typeSyncRef, typePosSendBuffer);
+        typePosSendBuffer = null;
+      }
+    }, 200);
+  }
+  if (typePosBatchTimer) { clearInterval(typePosBatchTimer); typePosBatchTimer = null; }
   if (myNick !== Object.keys(players)[0]) {
     detachTypeSync = onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;
@@ -804,7 +832,8 @@ function showQuestion(){
   currentNum.textContent=idx+1;
   clearInterval(window._qInt); qTimerEl.style.display='block';
   questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit; pausedRemainingQTime = null;
-  window._qInt=setInterval(tickQ,100); 
+  lastDisplayedQSec = null;
+  window._qInt=setInterval(tickQ,250); 
   // --- 選択モード分岐 ---
   if (roomModeValue === 'select') {
     buzzBtn.style.display = 'none';
@@ -1004,7 +1033,7 @@ buzzBtn.addEventListener('click', async (e) => {
   if (window.navigator.vibrate) window.navigator.vibrate(50);
   clearInterval(window._qInt);
   pauseTypewriter();
-  pausedRemainingQTime = parseFloat(remainingQTime);
+  pausedRemainingQTime = remainingQTime;
   statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
   const buzzRef = ref(db, `rooms/${roomId}/buzz`);
   await runTransaction(buzzRef, current => {
@@ -1030,7 +1059,8 @@ buzzBtn.addEventListener('click', async (e) => {
         if (pausedRemainingQTime != null) {
           questionStart = getServerTime() - (TEXT.questionTimeLimit - pausedRemainingQTime) * 1000;
         }
-        window._qInt = setInterval(tickQ,100);
+  lastDisplayedQSec = null;
+  window._qInt = setInterval(tickQ,250);
         resumeTypewriter();
       }
     } else {
@@ -1113,6 +1143,31 @@ async function submitAnswer() {
     answerInput.value = '';
     await remove(ref(db, `rooms/${roomId}/buzz`));
     // 再開は watchEvents の wrongGuess で処理
+    // 入力モードでは誤答者本人にも体感遅延なく再開させる（イベント往復待ちを避ける）
+    if (roomModeValue === 'input') {
+      // 全員誤答時はローカル再開をスキップ（正答表示を上書きしない）
+      if (answered || !flowStarted) return;
+      try {
+        // watchEvents の wrongGuess 再開処理を軽量コピー
+        if (pausedRemainingQTime != null) {
+          const remain = pausedRemainingQTime;
+          questionStart = getServerTime() - (TEXT.questionTimeLimit - remain) * 1000;
+        }
+        flowStarted = true;
+        // タイプ再開（既に全部出ていない場合）
+        currentText = sequence[idx].question;
+        if (questionEl.textContent.length < currentText.length) {
+          typePos = questionEl.textContent.length;
+          resumeTypewriter();
+        }
+        // タイマー再開
+        lastDisplayedQSec = null;
+        clearInterval(window._qInt);
+        window._qInt = setInterval(tickQ,250);
+        pausedRemainingQTime = null;
+        updateBuzzState();
+      } catch(e){ /* noop */ }
+    }
   }
 }
 // 回答ボタン/Enter キーイベント（入力モード用）※ Enter のバブリングで次問へ飛ばないよう停止
@@ -1159,6 +1214,7 @@ nextBtn.addEventListener('click', async () => {
 
 // 結果表示
 async function showResults(){
+  window.scrollTo({top: 0, left: 0, behavior: 'auto'});
   quizAppDiv.classList.add('hidden');
   resultsDiv.classList.remove('hidden');
   allowUnload = true;
@@ -1169,14 +1225,24 @@ async function showResults(){
     get(ref(db,`rooms/${roomId}/events`))
   ]);
   players = ps.val() || {};
-  scores  = sc.val() || {};
   const eventsObj = evSnap.val() || {};
   const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
-
-  const scoreValues = Object.values(scores).map(v => v || 0);
+  // events から正解数を再集計
+  const eventScores = {};
+  eventsArr.forEach(ev => {
+    if (ev.correct && ev.nick) {
+      eventScores[ev.nick] = (eventScores[ev.nick] || 0) + 1;
+    }
+  });
+  // DBのscoresも fallback で参照
+  scores = sc.val() || {};
+  Object.keys(scores).forEach(nick => {
+    if (!(nick in eventScores)) eventScores[nick] = scores[nick] || 0;
+  });
+  const scoreValues = Object.values(eventScores).map(v => v || 0);
   const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
   const winners = maxScore > 0
-    ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
+    ? Object.keys(eventScores).filter(nick => (eventScores[nick] || 0) === maxScore)
     : [];
 
   let html = `<h2>${TEXT.labels.resultsTitle}</h2>`;
@@ -1187,7 +1253,7 @@ async function showResults(){
   }
   html += `<h3>${TEXT.labels.participantsHeader}</h3><ul>`;
   Object.keys(players).forEach(nick => {
-    const score = scores[nick] || 0;
+    const score = eventScores[nick] || 0;
     const cls = winners.includes(nick) ? ' class="winner"' : '';
     html += `<li${cls}>${nick}：${score}問正解</li>`;
   });
