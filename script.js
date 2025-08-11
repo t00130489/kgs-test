@@ -1,7 +1,10 @@
 // PCでEnterキーで早押し・次の問題へボタンを押せるように
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.repeat) {
-    // 早押しボタン
+    const t = e.target;
+    // 入力系要素内での Enter はグローバル処理しない（回答送信やフォーム用途専用）
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // 早押しボタン優先
     if (!buzzBtn.disabled && buzzBtn.offsetParent !== null) {
       buzzBtn.click();
       e.preventDefault();
@@ -57,7 +60,7 @@ import {
   getDatabase, ref, set, push,
   onValue, onChildAdded, remove,
   get, child,
-  runTransaction // ← ここを追加
+  runTransaction
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
 
 initializeApp({
@@ -111,10 +114,9 @@ roomCountInput.addEventListener('input', () => {
 roomIdInput.addEventListener('input', () => {
   const val = roomIdInput.value;
   if (val.match(/^[0-9]{5}$/)) {
-    // 5桁の数字のみ有効
     showInputError(roomIdInput, '');
     joinRoomBtn.disabled = false;
-    roomIdInput.classList.remove('valid-input');
+    roomIdInput.classList.add('valid-input');
   } else {
     showInputError(roomIdInput, '5桁の数字のみ入力してください');
     joinRoomBtn.disabled = true;
@@ -263,12 +265,14 @@ let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
 const allEvents = [];
 let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
-let roomModeValue = 'input'; // ルームのモード（input/select）
-let pressedCorrectButLost = false; // 選択肢正解ボタンを押したが一着でなかった場合のフラグ
-let alreadyScoredForThisQuestion = false; // 1問で複数回スコア加算しないためのフラグ
-let alreadyHandledCorrectEvent = false; // 1問で正解イベント処理を1回だけ行う
-// 問題インデックス単位で正解イベントを一度だけ画面遷移処理するためのセット
+let roomModeValue = 'input';
+let pressedCorrectButLost = false;
+let alreadyScoredForThisQuestion = false;
+let alreadyHandledCorrectEvent = false;
 let handledCorrectFor = new Set();
+// 追加: 早押し中断での残り時間とタイプ同期解除関数
+let pausedRemainingQTime = null; // 秒
+let detachTypeSync = null; // onValue の unsubscribe
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -336,7 +340,7 @@ function onQuestionTimeout(){
   nextBtn.disabled = false;
   startNextBtnCountdown();
   remove(ref(db, `rooms/${roomId}/buzz`));
-  // 選択モード時のUI
+  pausedRemainingQTime = null;
   if (roomModeValue === 'select') {
     Array.from(choiceArea.children).forEach(b => {
       if (b.dataset.isAnswer === '1') {
@@ -452,19 +456,16 @@ function watchEvents(){
   onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
     const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     allEvents.push(ev);
-    // --- 正解イベント処理 ---
     if(ev.correct){
-      // 既にこの問題の正解イベントを処理済みならUI遷移のみ抑制（スコア等はawardsで防止）
       if (handledCorrectFor.has(ev.questionIndex)) return;
       handledCorrectFor.add(ev.questionIndex);
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      // --- スコア加算をDB側トランザクション & 重複防止アワード制御 ---
       const awardRef = ref(db, `rooms/${roomId}/awards/${ev.questionIndex}/${ev.nick}`);
       runTransaction(awardRef, current => {
-        if (current === null) return true; // 初回のみtrueをセット
-        return; // 以降は非コミット
+        if (current === null) return true;
+        return;
       }).then(res => {
         if(res.committed){
           runTransaction(ref(db, `rooms/${roomId}/scores/${ev.nick}`), cur => (cur||0)+1);
@@ -476,9 +477,7 @@ function watchEvents(){
       aTimerEl.style.display = 'none';
       nextBtn.disabled = false; updateBuzzState();
       startNextBtnCountdown();
-      // 選択肢モード時のUI
       if (roomModeValue === 'select') {
-        // 正解ボタンのみ色変更
         Array.from(choiceArea.children).forEach(b => {
           if (b.dataset.isAnswer === '1') {
             b.classList.add('btn-danger');
@@ -489,42 +488,45 @@ function watchEvents(){
         });
       }
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
+      // 誤答 / 回答時間切れ: 問題再開。元の questionStart は維持し残り時間補正
       clearTimers();
       const disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
       statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
       flowStarted = true;
-      questionStart = ev.timestamp;
-      // タイプライター式の問題文表示を再開
+      // pausedRemainingQTime に基づき questionStart を再計算
+      if (pausedRemainingQTime != null) {
+        const remain = pausedRemainingQTime; // 秒
+        questionStart = getServerTime() - (TEXT.questionTimeLimit - remain) * 1000;
+      }
       currentText = sequence[idx].question;
-      // 途中まで表示されている場合はその続きから再開
-        if (questionEl.textContent.length < currentText.length) {
-          typePos = questionEl.textContent.length;
+      if (questionEl.textContent.length < currentText.length) {
+        typePos = questionEl.textContent.length;
+        resumeTypewriter();
+      }
+      if (typeof typeSyncRef === 'object' && typeSyncRef) {
+        get(typeSyncRef).then(snap => {
+          const synced = snap.val() || 0;
+          typePos = Math.max(questionEl.textContent.length, synced);
           resumeTypewriter();
-        }
-        // 最新のtypePosをDBから取得して再開
-        if (typeof typeSyncRef === 'object' && typeSyncRef) {
-          get(typeSyncRef).then(snap => {
-            const synced = snap.val() || 0;
-            typePos = Math.max(questionEl.textContent.length, synced);
-            resumeTypewriter();
-          });
-        } else {
-          if (questionEl.textContent.length < currentText.length) {
-            typePos = questionEl.textContent.length;
-            resumeTypewriter();
-          }
-        }
-        window._qInt = setInterval(tickQ,100);
-        updateBuzzState();
+        });
+      } else if (questionEl.textContent.length < currentText.length) {
+        typePos = questionEl.textContent.length;
+        resumeTypewriter();
+      }
+      window._qInt = setInterval(tickQ,100);
+      pausedRemainingQTime = null; // 再開後クリア
+      updateBuzzState();
     }
   });
 }
+
 function watchBuzz(){
   onValue(ref(db,`rooms/${roomId}/buzz`), snap=>{
     const b = snap.val();
     if(b && flowStarted && !answered){
       flowStarted = false; clearInterval(window._qInt); pauseTypewriter();
       statusEl.textContent = `${b.nick} さんが押しました`;
+      pausedRemainingQTime = parseFloat(remainingQTime); // 中断時の残り時間を記録
       if(b.nick===myNick){
         answerArea.classList.remove('hidden'); answerBtn.disabled=false; startAnswerTimer();
       }
@@ -686,7 +688,7 @@ function updateLocalCountdown(startTs) {
 }
 
 function startPreCountdown(startTs){
-  clearTimers(); flowStarted=false; answered=false;
+  clearTimers(); flowStarted=false; answered=false; pausedRemainingQTime = null;
   statusEl.textContent=''; answerArea.classList.add('hidden'); answerInput.value='';
   qTimerEl.style.display='none'; aTimerEl.style.display='none'; questionEl.style.visibility='hidden';
   // カードブロックを表示、ラベル・カウントダウンをセット
@@ -735,9 +737,10 @@ function startPreCountdown(startTs){
 
 // タイプ制御
 let typePos=0, currentText='';
-// タイプ進捗をDBで同期
 let typeSyncRef = null;
 function showQuestion(){
+  // 旧リスナー解除
+  if (detachTypeSync) { try { detachTypeSync(); } catch(e) {} detachTypeSync = null; }
   currentText = sequence[idx].question; typePos = 0;
   questionEl.textContent = '';
   questionEl.style.visibility = 'visible';
@@ -748,8 +751,6 @@ function showQuestion(){
   qt.classList.remove('show-answer');
   qt.style.display = 'block';
   clearInterval(window._typeInt);
-  // タイプ進捗同期用リファレンス
-  if (typeSyncRef) typeSyncRef.off && typeSyncRef.off();
   typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
   let lastTypePos = 0;
   window._typeInt = setInterval(() => {
@@ -766,7 +767,7 @@ function showQuestion(){
     }
   }, TEXT.typeSpeed);
   if (myNick !== Object.keys(players)[0]) {
-    onValue(typeSyncRef, snap => {
+    detachTypeSync = onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;
       if (synced > typePos && typePos < currentText.length) {
         questionEl.textContent += currentText.slice(typePos, synced);
@@ -776,7 +777,7 @@ function showQuestion(){
   }
   currentNum.textContent=idx+1;
   clearInterval(window._qInt); qTimerEl.style.display='block';
-  questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit;
+  questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit; pausedRemainingQTime = null;
   window._qInt=setInterval(tickQ,100); 
   // --- 選択モード分岐 ---
   if (roomModeValue === 'select') {
@@ -803,7 +804,7 @@ function showQuestion(){
       remove(ref(db, `rooms/${roomId}/selectBuzz`));
     }
     choiceArea.innerHTML = '';
-    choices.forEach((obj, idxChoice) => {
+    choices.forEach(obj => {
       const btn = document.createElement('button');
       btn.className = 'btn-primary';
       btn.textContent = obj.c;
@@ -814,7 +815,7 @@ function showQuestion(){
       btn.dataset.isAnswer = (obj.i === 0 ? '1' : '0');
       btn.disabled = false;
       // 選択肢ボタン押下時の処理
-      btn.addEventListener('click', async (e) => {
+      btn.addEventListener('click', async () => {
         if (btn.disabled) return;
         // 正解ボタン
         if (btn.dataset.isAnswer === '1') {
@@ -838,7 +839,7 @@ function showQuestion(){
               // 先に押した人の名前を取得して表示
               get(selectRef).then(snap => {
                 const selectData = snap.val();
-                const who = selectData && selectData.nick ? selectData.nick : '誰か';
+                const who = selectData && selectData.nick ? selectData.nick : '他のプレイヤー';
                 if (who === myNick) {
                   statusEl.textContent = `正解！🎉`;
                   showFeedback(true);
@@ -900,13 +901,11 @@ function showQuestion(){
 function pauseTypewriter(){ clearInterval(window._typeInt); }
 function resumeTypewriter(){
   clearInterval(window._typeInt);
-  // 表示済みの長さから再開するためtypePosを再取得
   typePos = questionEl.textContent.length;
   let lastTypePos = typePos;
   window._typeInt = setInterval(() => {
     if (typePos < currentText.length) {
       questionEl.textContent += currentText[typePos++];
-      // ホストは進捗をDBに反映
       if (myNick === Object.keys(players)[0]) {
         if (typePos > lastTypePos) {
           set(typeSyncRef, typePos);
@@ -975,51 +974,44 @@ function startNextBtnCountdown() {
 // 早押しボタン処理（トランザクション＋楽観的UI反映）
 buzzBtn.addEventListener('click', async (e) => {
   if (!canBuzz()) return;
-  // リップルエフェクト
   createRipple(e);
-  // バイブレーション
   if (window.navigator.vibrate) window.navigator.vibrate(50);
   clearInterval(window._qInt);
   pauseTypewriter();
-
-  // 楽観的UI反映
+  pausedRemainingQTime = parseFloat(remainingQTime);
   statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
-
   const buzzRef = ref(db, `rooms/${roomId}/buzz`);
   await runTransaction(buzzRef, current => {
     if (current === null) {
-      return {
-        nick: myNick,
-        time: getServerTime()
-      };
+      return { nick: myNick, time: getServerTime() };
     }
     return;
   }).then(result => {
     if (!result.committed) {
-      // 失敗時ロールバック
-      // 先に押した人の名前を取得して表示
       get(buzzRef).then(snap => {
         const buzzData = snap.val();
-        const who = buzzData && buzzData.nick ? buzzData.nick : '誰か';
+        const who = buzzData && buzzData.nick ? buzzData.nick : '他のプレイヤー';
         statusEl.textContent = `${who} さんが先に押しました…`;
       });
-      // 回答欄・ボタン・タイマーを非表示にし、状態をリセット
       answerArea.classList.add('hidden');
       answerBtn.disabled = true;
       aTimerEl.style.display = 'none';
       answerInput.value = '';
-      // 早押し未参加状態に戻す
       answered = false;
-      // タイムアップ誤答等の処理は行わない
+      // 失敗したのでタイプ再開 & タイマー再開
+      if (!flowStarted) {
+        flowStarted = true;
+        if (pausedRemainingQTime != null) {
+          questionStart = getServerTime() - (TEXT.questionTimeLimit - pausedRemainingQTime) * 1000;
+        }
+        window._qInt = setInterval(tickQ,100);
+        resumeTypewriter();
+      }
     } else {
-      // 成功時はwatchBuzzでUI確定。スマホで自動的に回答欄を選択
       setTimeout(() => {
         if (document.activeElement !== answerInput) answerInput.focus();
-        // スマホで回答欄を中央にスクロール
         if (window.innerWidth <= 600) {
-          setTimeout(() => {
-            answerInput.scrollIntoView({behavior:'smooth', block:'center'});
-          }, 300);
+          setTimeout(() => { answerInput.scrollIntoView({behavior:'smooth', block:'center'}); }, 300);
         }
       }, 100);
     }
@@ -1066,11 +1058,7 @@ async function submitAnswer() {
     questionIndex: idx,
     timestamp: getServerTime()
   };
-  if (!isCorrect) {
-    ev.type = 'wrongGuess';
-  }
-
-  // Firebase に送信
+  if (!isCorrect) ev.type = 'wrongGuess';
   await push(ref(db, `rooms/${roomId}/events`), ev);
 
   if (isCorrect) {
@@ -1078,6 +1066,7 @@ async function submitAnswer() {
     clearTimers();
     answered = true;
     flowStarted = false;
+    pausedRemainingQTime = null;
 
     questionEl.textContent = sequence[idx].question;
     qTimerEl.textContent = '正解：' + corr;
@@ -1097,19 +1086,25 @@ async function submitAnswer() {
     answerArea.classList.add('hidden');
     answerInput.value = '';
     await remove(ref(db, `rooms/${roomId}/buzz`));
-    // 問題タイマーを再開（他の人の早押し待ち状態に戻す）
-    if (flowStarted) {
-      window._qInt = setInterval(tickQ, 100);
-    }
+    // 再開は watchEvents の wrongGuess で処理
   }
 }
+// 回答ボタン/Enter キーイベント（入力モード用）※ Enter のバブリングで次問へ飛ばないよう停止
+if (answerBtn && answerInput) {
+  answerBtn.addEventListener('click', submitAnswer);
+  answerInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !answerBtn.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      submitAnswer();
+    }
+  });
+}
+// 回答ボタン/Enter キーイベント（復旧）
 answerBtn.addEventListener('click', submitAnswer);
-answerInput.addEventListener('keydown', function(e) {
-  if (!answerBtn.disabled && (e.key === 'Enter')) {
-    submitAnswer();
-  }
+answerInput.addEventListener('keydown', e => {
+  if (!answerBtn.disabled && e.key === 'Enter') submitAnswer();
 });
-
 // 次へ
 nextBtn.addEventListener('click', async () => {
   if (nextBtn.disabled) return;
