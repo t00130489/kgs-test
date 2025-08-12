@@ -12,10 +12,10 @@ const db = admin.database();
  * 毎日 24 時間ごとに、createdAt から 24 時間以上経過した古いルームを削除
  */
 exports.scheduledCleanupRooms = onSchedule(
-  /* cron 形式でも指定可能ですが、シンプルに */ 
-  "every 24 hours",
+  /* 1時間ごとに実行 */ 
+  "every 60 minutes",
   async (event) => {
-    const cutoff   = Date.now() - 24 * 60 * 60 * 1000; // 今から24h 前
+    const cutoff   = Date.now() - 2 * 60 * 60 * 1000; // 今から2h 前
     const roomsRef = db.ref("rooms");
     const snap     = await roomsRef.once("value");
     const updates  = {};
@@ -23,7 +23,7 @@ exports.scheduledCleanupRooms = onSchedule(
     snap.forEach((roomSnap) => {
       const settings = roomSnap.child("settings").val();
       if (settings && settings.createdAt < cutoff) {
-        // 24h 過ぎていれば削除対象
+        // 2h 過ぎていれば削除対象
         updates[roomSnap.key] = null;
       }
     });
