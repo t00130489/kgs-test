@@ -274,13 +274,9 @@ let players = {}, scores = {}, wrongs = {};
 let lastDisplayedQSec = null;
 let flowStarted = false, answered = false;
 let questionStart = 0, remainingQTime = TEXT.questionTimeLimit;
-const allEvents = [];
 let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
 let roomModeValue = 'input';
-let pressedCorrectButLost = false;
-let alreadyScoredForThisQuestion = false;
-let alreadyHandledCorrectEvent = false;
 let handledCorrectFor = new Set();
 // 追加: 早押し中断での残り時間とタイプ同期解除関数
 let pausedRemainingQTime = null; // 秒
@@ -454,9 +450,6 @@ function watchIndex(){
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
   // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
-  alreadyHandledCorrectEvent = false;
-  alreadyScoredForThisQuestion = false;
-  pressedCorrectButLost = false;
   answered = false;
   flowStarted = false;
   clearTimers();
@@ -473,8 +466,7 @@ function watchIndex(){
 }
 function watchEvents(){
   onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
-    const ev = snap.val(); if(ev.timestamp <= joinTs) return;
-    allEvents.push(ev);
+  const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     if(ev.correct){
       if (handledCorrectFor.has(ev.questionIndex)) return;
       handledCorrectFor.add(ev.questionIndex);
@@ -778,9 +770,6 @@ function startPreCountdown(startTs){
 // タイプ制御
 let typePos=0, currentText='';
 let typeSyncRef = null;
-// --- typePosバッチ送信用 ---
-let typePosSendBuffer = null;
-let typePosBatchTimer = null;
 function showQuestion(){
   // 旧リスナー解除
   if (detachTypeSync) { try { detachTypeSync(); } catch(e) {} detachTypeSync = null; }
@@ -801,25 +790,14 @@ function showQuestion(){
       questionEl.textContent += currentText[typePos++];
       if (myNick === Object.keys(players)[0]) {
         if (typePos > lastTypePos) {
-          // バッファに最新値を保存
-          typePosSendBuffer = typePos;
+          set(typeSyncRef, typePos);
+          lastTypePos = typePos;
         }
       }
     } else {
       clearInterval(window._typeInt);
     }
   }, TEXT.typeSpeed);
-  // --- バッチ送信タイマー ---
-  if (typePosBatchTimer) clearInterval(typePosBatchTimer);
-  if (myNick === Object.keys(players)[0]) {
-    typePosBatchTimer = setInterval(() => {
-      if (typePosSendBuffer !== null) {
-        set(typeSyncRef, typePosSendBuffer);
-        typePosSendBuffer = null;
-      }
-    }, 200);
-  }
-  if (typePosBatchTimer) { clearInterval(typePosBatchTimer); typePosBatchTimer = null; }
   if (myNick !== Object.keys(players)[0]) {
     detachTypeSync = onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;
@@ -1181,11 +1159,6 @@ if (answerBtn && answerInput) {
     }
   });
 }
-// 回答ボタン/Enter キーイベント（復旧）
-answerBtn.addEventListener('click', submitAnswer);
-answerInput.addEventListener('keydown', e => {
-  if (!answerBtn.disabled && e.key === 'Enter') submitAnswer();
-});
 // 次へ
 nextBtn.addEventListener('click', async () => {
   if (nextBtn.disabled) return;
@@ -1201,9 +1174,6 @@ nextBtn.addEventListener('click', async () => {
     choiceArea.classList.add('hidden');
     choiceArea.innerHTML = '';
   }
-  pressedCorrectButLost = false;
-  alreadyScoredForThisQuestion = false;
-  alreadyHandledCorrectEvent = false;
   if (idx + 1 < sequence.length) {
     await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
     await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
