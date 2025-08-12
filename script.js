@@ -1080,16 +1080,7 @@ buzzBtn.addEventListener('click', async (e) => {
       aTimerEl.style.display = 'none';
       answerInput.value = '';
       answered = false;
-      // 失敗したのでタイプ再開 & タイマー再開
-      if (!flowStarted && !handledCorrectFor.has(idx)) { // 直近で正解が確定していない場合のみ再開
-        flowStarted = true;
-        if (pausedRemainingQTime != null) {
-          questionStart = getServerTime() - (TEXT.questionTimeLimit - pausedRemainingQTime) * 1000;
-        }
-  lastDisplayedQSec = null;
-  window._qInt = setInterval(tickQ,250);
-        resumeTypewriter();
-      }
+  // ここでは再開しない。他参加者同様、サーバからのwrongGuess/answerTimeoutイベントで再開を待つ
     } else {
       setTimeout(() => {
         if (document.activeElement !== answerInput) answerInput.focus();
