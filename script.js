@@ -326,6 +326,9 @@ let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
 let roomModeValue = 'input';
 let handledCorrectFor = new Set();
+// 自分がこの問題で誤答（または解答時間切れ）したかどうかのローカルフラグ
+// DBの反映前でも自分だけは早押しボタンを再有効化しないために使用
+let iAmWrongLocal = false;
 // 追加: 早押し中断での残り時間とタイプ同期解除関数
 let pausedRemainingQTime = null; // 秒
 let detachTypeSync = null; // onValue の unsubscribe
@@ -379,7 +382,7 @@ function revealFullQuestionAndStopSync() {
   questionEl.textContent = currentText;
   typePos = currentText.length;
 }
-function canBuzz(){ return flowStarted && !answered && !wrongs[myNick]; }
+function canBuzz(){ return flowStarted && !answered && !wrongs[myNick] && !iAmWrongLocal; }
 function updateBuzzState(){
   const disabled = spectatorUntilNext ? true : !canBuzz();
   buzzBtn.disabled = disabled;
@@ -517,6 +520,17 @@ function watchWrongs(){
         qTimerEl.classList.add('show-answer');
         qTimerEl.style.display = 'block';
         statusEl.textContent = '全員誤答…';
+        // 選択モード時は時間切れと同様に正解を赤、その他を無効化
+        if (roomModeValue === 'select') {
+          Array.from(choiceArea.children).forEach(b => {
+            if (b.dataset.isAnswer === '1') {
+              b.classList.add('btn-danger');
+            } else {
+              b.classList.add('disabled-btn');
+            }
+            b.disabled = true;
+          });
+        }
       } else {
         qTimerEl.textContent = '';
         qTimerEl.classList.remove('show-answer');
@@ -560,6 +574,8 @@ function watchIndex(){
   flowStarted = false;
     handledCorrectFor.clear();
   clearTimers();
+    // 新しい問題に入ったらローカル誤答フラグを解除
+    iAmWrongLocal = false;
     // 選択モードでは即座に旧選択肢を消しておく（カウントダウン中に表示残りを防止）
     if (roomModeValue === 'select') {
       if (choiceArea) {
@@ -606,6 +622,10 @@ function watchEvents(){
   let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
   if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
   statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      // 自分の誤答/時間切れなら、ローカルでも即時に誤答フラグON（再有効化を防ぐ）
+      if (ev.nick === myNick) {
+        iAmWrongLocal = true;
+      }
       // すでに正解が確定している場合は再開しない（レース回避）
       if (handledCorrectFor.has(ev.questionIndex)) return;
       flowStarted = true;
@@ -632,7 +652,7 @@ function watchEvents(){
   lastDisplayedQSec = null;
   window._qInt = setInterval(tickQ,250);
       pausedRemainingQTime = null; // 再開後クリア
-      updateBuzzState();
+  updateBuzzState();
     }
   });
   unsubs.push(off);
@@ -874,7 +894,7 @@ function updateLocalCountdown(startTs) {
     else {
       clearInterval(window._preInt);
       preCd.textContent = '';
-    }
+  }
   };
   tick();
   window._preInt = setInterval(tick, 200);
@@ -1153,6 +1173,7 @@ function startAnswerTimer(){
     if(s<0){
       clearInterval(window._aInt);
       // 解答時間切れイベント
+  iAmWrongLocal = true; // ローカル即時反映
       await push(ref(db,`rooms/${roomId}/events`),{
         nick:myNick,correct:false,guess:'時間切れ',
         answer:sequence[idx].answer,type:'answerTimeout',
@@ -1302,8 +1323,10 @@ async function submitAnswer() {
     startNextBtnCountdown();
   } else {
     // 誤答処理
-    clearTimers();
-    await set(ref(db, `rooms/${roomId}/wrongAnswers/${myNick}`), true);
+  // ローカル即時フラグで一瞬の再有効化を防ぐ
+  iAmWrongLocal = true;
+  clearTimers();
+  await set(ref(db, `rooms/${roomId}/wrongAnswers/${myNick}`), true);
     answerArea.classList.add('hidden');
     answerInput.value = '';
     await remove(ref(db, `rooms/${roomId}/buzz`));

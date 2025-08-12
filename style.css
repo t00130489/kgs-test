@@ -380,10 +380,20 @@
 
 * { box-sizing: border-box; }
 
+/* Global font smoothing */
+html, body, input, textarea, select, button {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased; /* Safari/Chrome (macOS) */
+  -moz-osx-font-smoothing: grayscale;  /* Firefox (macOS) */
+  text-rendering: optimizeLegibility;  /* Hint: kerning/ligatures */
   margin: 0;
   padding: 1rem;
   max-width: 1000px;
@@ -392,7 +402,7 @@ body {
 
 header {
   text-align: center;
-  padding: 0.7rem 0 0.4rem 0;
+  padding: 0.7rem 0 0.2rem 0; /* タイトル下の余白を少し狭く */
 }
 .main-title {
   position: relative;
@@ -423,9 +433,9 @@ header {
   background: var(--card-bg);
   border-radius: 12px;
   padding: 0.1rem 1.5rem 1.5rem 1.5rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.3rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  margin-top: 0.2em;
+  margin-top: 0em; /* タイトル直下のカードを少し近づける */
   margin-bottom: 0.7em;
 }
 
@@ -454,11 +464,13 @@ button {
   font-size: 1rem;
   padding: 0.75rem 1.25rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px; /* 角丸を少し強化 */
   cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: background-color 0.2s, transform 0.08s, box-shadow 0.12s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 button:hover:not(:disabled) { transform: translateY(-1px); }
+button:active:not(:disabled) { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-primary, .btn-secondary {
@@ -479,6 +491,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   background: #b71c1c !important;
   color: #fff !important;
 }
+/* 無効化スタイル（選択肢ボタンなど） */
+/* （選択肢ボタンの無効時カラーは既定の不透明度に戻す） */
 
 .countdown, .timer { font-weight: bold; }
 #pre-countdown {
@@ -499,14 +513,23 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   background: var(--danger);
   color: #fff;
   margin: 1rem 0;
-  transition: transform 0.1s;
+  transition: transform 0.08s, background-color 0.2s, box-shadow 0.12s;
+  border-radius: 14px; /* 角丸を強化 */
 }
 .buzz-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.buzz-btn:active:not(:disabled) { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); }
+/* 早押しボタンの無効時スタイルを薄く */
+.buzz-btn:disabled,
+.buzz-btn.disabled-btn {
+  background: #f3c6c6 !important;
+  color: #fff !important;
+  opacity: 1 !important; /* 色で薄くするため不透明度は固定 */
+}
 
 .status {
   font-size: 1.2rem;
   font-weight: bold;
-  margin: 0.4rem 0;
+  margin: 0.25rem 0 0.35rem 0; /* 下のボタンとの間隔を少し狭く */
   min-height: 2em;
   display: flex;
   align-items: flex-start;
