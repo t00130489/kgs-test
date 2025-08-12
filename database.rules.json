@@ -1,0 +1,48 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        "settings": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.hasChildren(['chapters','count','mode','createdAt','host']) && newData.child('count').isNumber() && newData.child('count').val() > 0 && newData.child('count').val() <= 999 && (newData.child('mode').val() === 'input' || newData.child('mode').val() === 'select') && newData.child('createdAt').isNumber() && newData.child('host').isString() && newData.child('chapters').val() != null"
+        },
+        "players": {
+          ".read": true,
+          "$nick": {
+            ".write": true,
+            ".validate": "!newData.exists() || (newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber() && (!data.exists() || newData.child('joinedAt').val() === data.child('joinedAt').val()))"
+          }
+        },
+        "scores": {
+          ".read": true,
+          ".write": false
+        },
+        "events": {
+          ".read": true,
+          "$eventId": {
+            ".write": "!data.exists()",
+            ".validate": "newData.hasChildren(['nick','correct','answer','questionIndex','timestamp']) && newData.child('nick').isString() && newData.child('correct').isBoolean() && newData.child('answer').isString() && newData.child('questionIndex').isNumber() && newData.child('timestamp').isNumber()"
+          }
+        },
+        "buzz": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.val() == null || (newData.hasChildren(['nick','time']) && newData.child('nick').isString() && newData.child('time').isNumber() && root.child('rooms/' + $roomId + '/players/' + newData.child('nick').val()).exists())"
+        },
+        "selectBuzz": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.val() == null || (newData.hasChildren(['nick','time']) && newData.child('nick').isString() && newData.child('time').isNumber() && root.child('rooms/' + $roomId + '/players/' + newData.child('nick').val()).exists())"
+        },
+        "wrongAnswers": { ".read": true, ".write": true },
+        "sequence": { ".read": true, ".write": "newData.hasChildren()" },
+        "currentIndex": { ".read": true, ".write": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999" },
+        "typePos": { ".read": true, ".write": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" }
+      }
+    },
+    "questions": { ".read": true, ".write": false }
+  }
+}

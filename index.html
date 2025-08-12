@@ -7,16 +7,44 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>興学思想テスト早押しクイズバトル</title>
-  <script src="version.js"></script>
-  <script>
-    // version.js で設定された APP_VERSION を使用してCSSを動的ロード
-    (function(){
-      const v = window.APP_VERSION;
-      const l = document.createElement('link');
-      l.rel='stylesheet';
-      l.href = 'style.css?v=' + encodeURIComponent(v);
-      document.write(l.outerHTML); // 初期描画タイミングで挿入
-    })();
+  <!-- ESMでversionを読み込み、CSS/JSはクエリ付きで読み込む（document.write廃止） -->
+  <!-- クリティカルCSS（FOUC対策のため最小限をインライン） -->
+  <style>
+    /* 最低限のレイアウトとフォントだけ指定（後続の style.css で上書き） */
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, Hiragino Kaku Gothic ProN, Meiryo, sans-serif; background:#f7f7fb; color:#222; }
+  /* header の背景色は指定しない（本来のデザインを維持） */
+  header { text-align:center; padding: 0.7rem 0 0.4rem 0; }
+    .main-title { display:flex; align-items:center; gap:8px; font-size: 1.2rem; margin:0; }
+    .main-icon { width:24px; height:24px; vertical-align:middle; }
+    main { max-width: 960px; margin: 12px auto; padding: 0 12px; }
+    .card { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:12px; }
+    .hidden { display:none !important; }
+  .btn-primary, .btn-secondary, .buzz-btn { cursor:pointer; }
+  /* 主要ボタンの色を仮置き（CSS読み込み前の一瞬だけの見栄え向上） */
+  .btn-primary, .btn-secondary { background:#004ea2; color:#fff; }
+  .buzz-btn { background:#d32f2f; color:#fff; }
+  </style>
+  <script type="module">
+    import { APP_VERSION } from './version.js';
+    // グローバルにも載せて、バージョン表記や他スクリプトから参照可能に
+    window.APP_VERSION = APP_VERSION;
+  // 先にpreloadしてCSS取得を前倒し
+  const preload = document.createElement('link');
+  preload.rel = 'preload';
+  preload.as = 'style';
+  preload.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
+  document.head.appendChild(preload);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
+    document.head.appendChild(link);
+
+    // バージョンラベル描画（DOM構築後）
+    window.addEventListener('DOMContentLoaded', () => {
+      const el = document.getElementById('app-version-label');
+      if (el) el.textContent = 'v' + APP_VERSION;
+    });
   </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEP0467K9D"></script>
@@ -66,24 +94,20 @@
             </div>
           </div>
         </div>
-        <div class="form-row" style="margin-bottom:0.5em;">
-          <span class="range-label">モード</span>
-        </div>
-        <div class="form-row" style="margin-bottom:0.5em;">
-          <div class="card-radio-group">
-            <label class="custom-radio">
-              <input type="radio" name="quiz-mode" id="mode-input" value="input" checked>
-              <span class="radio-mark"></span>
-              <span class="radio-label">入力モード</span>
-            </label>
-            <label class="custom-radio">
-              <input type="radio" name="quiz-mode" id="mode-select" value="select">
-              <span class="radio-mark"></span>
-              <span class="radio-label">選択モード</span>
+  <div class="form-row mode-row" style="margin-bottom:1.7em;">
+          <label for="mode-switch" class="range-label">モード</label>
+          <div class="mode-switch-wrap" aria-label="モード切り替え">
+            <label class="switch-toggle switch-variant-rocker">
+              <input type="checkbox" id="mode-switch" role="switch" aria-label="入力モード/選択モード 切替">
+              <span class="switch-track">
+                <span class="switch-label left">入力</span>
+                <span class="switch-label right">選択</span>
+                <span class="switch-thumb" aria-hidden="true"></span>
+              </span>
             </label>
           </div>
         </div>
-        <div class="form-row">
+  <div class="form-row count-row">
           <label for="room-count" class="range-label">出題問題数</label>
           <input type="number" id="room-count" class="styled-input" value="10" min="1" max="999" required pattern="^[0-9]{1,3}$" inputmode="numeric" placeholder="1～999">
         </div>
@@ -100,7 +124,7 @@
       </div>
 
       <section id="description" class="card home-card">
-        <h2 class="card-title">使い方・ルール</h2>
+        <h2 class="card-title">使い方</h2>
         <p class="desc-lead">一人勉強用 / みんなで遊ぶ用の興学思想早押しクイズです。</p>
         <ol class="desc-list">
           <li>ルームを作成！</li>
@@ -161,14 +185,6 @@
 
   <!-- フィードバックオーバーレイ -->
   <div id="feedback-overlay" class="feedback-overlay hidden"></div>
-
-  <script>
-    // バージョンラベル描画
-    window.addEventListener('DOMContentLoaded',()=>{
-      const el=document.getElementById('app-version-label');
-      if(el) el.textContent='v'+window.APP_VERSION;
-    });
-  </script>
   <script type="module">
     import { APP_VERSION } from './version.js';
     const s = document.createElement('script');
