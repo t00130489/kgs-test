@@ -1260,7 +1260,7 @@ async function showResults(){
   html += `</ul><h3>${TEXT.labels.perQuestionHeader}</h3>`;
   sequence.forEach((q, i) => {
     html += `<div class="result-question-card"><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
-    const qEvents = eventsArr.filter(e => e.questionIndex === i);
+    const qEvents = eventsArr.filter(e => Number(e.questionIndex) === i);
     const win = qEvents.filter(e=>e.correct).map(e=>e.nick);
     html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
     qEvents.filter(e=>!e.correct).forEach(e=>{
