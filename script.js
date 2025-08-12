@@ -249,6 +249,34 @@ const questionCardBlock = document.getElementById('question-card-block');
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
 
+// 簡易ローディングオーバーレイ
+let loadingOverlay;
+function showLoading(text){
+  if (!loadingOverlay) {
+    loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'loading-overlay';
+    loadingOverlay.style = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:2500;color:#fff;font-size:1.2rem;';
+    const box = document.createElement('div');
+    box.style = 'background:rgba(0,0,0,0.7);padding:1rem 1.5rem;border-radius:10px;min-width:200px;text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.25)';
+    const spinner = document.createElement('div');
+    spinner.style = 'width:28px;height:28px;border:3px solid #fff;border-top-color:transparent;border-radius:50%;margin:0 auto 0.6rem;animation:spin 0.8s linear infinite;';
+    const label = document.createElement('div');
+    label.id = 'loading-label';
+    label.textContent = text || '読み込み中...';
+    box.appendChild(spinner); box.appendChild(label);
+    loadingOverlay.appendChild(box);
+    document.body.appendChild(loadingOverlay);
+    const style = document.createElement('style');
+    style.textContent = '@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+    document.head.appendChild(style);
+  } else {
+    const label = loadingOverlay.querySelector('#loading-label');
+    if (label) label.textContent = text || '読み込み中...';
+    loadingOverlay.style.display = 'flex';
+  }
+}
+function hideLoading(){ if (loadingOverlay) loadingOverlay.style.display = 'none'; }
+
 // フィードバック表示（アニメーションをスムーズに）
 function showFeedback(isCorrect) {
   feedbackOverlay.textContent = isCorrect ? '〇' : '×';
@@ -315,6 +343,19 @@ function clearNextBtnCountdown() {
     }
   }
 }
+
+// タイプを即時に全文表示し、タイプ同期も解除（余計な追記防止）
+function revealFullQuestionAndStopSync() {
+  try { clearInterval(window._typeInt); } catch (e) {}
+  if (typeof detachTypeSync === 'function' && detachTypeSync) {
+    try { detachTypeSync(); } catch (e) {}
+  }
+  detachTypeSync = null;
+  currentText = sequence[idx] && sequence[idx].question ? sequence[idx].question : (currentText || '');
+  if (typeof currentText !== 'string') currentText = '';
+  questionEl.textContent = currentText;
+  typePos = currentText.length;
+}
 function canBuzz(){ return flowStarted && !answered && !wrongs[myNick]; }
 function updateBuzzState(){
   buzzBtn.disabled = !canBuzz();
@@ -351,7 +392,7 @@ function onQuestionTimeout(){
   clearTimers();
   answered = true;
   flowStarted = false;
-  questionEl.textContent = sequence[idx].question;
+  revealFullQuestionAndStopSync();
   qTimerEl.textContent = '正解：' + sequence[idx].answer;
   qTimerEl.classList.add('show-answer');
   qTimerEl.style.display = 'block';
@@ -430,7 +471,7 @@ function watchWrongs(){
     const total = Object.keys(players).length;
     if(!answered && Object.keys(wrongs).length >= total){
       clearTimers(); answered = true; flowStarted = false;
-      questionEl.textContent = sequence[idx].question;
+  revealFullQuestionAndStopSync();
       qTimerEl.textContent = '正解：' + sequence[idx].answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -491,7 +532,7 @@ function watchEvents(){
       if (handledCorrectFor.has(ev.questionIndex)) return;
       handledCorrectFor.add(ev.questionIndex);
       clearTimers(); answered = true; flowStarted = false;
-      questionEl.textContent = sequence[idx].question;
+  revealFullQuestionAndStopSync();
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
   // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
   // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
@@ -558,6 +599,13 @@ function watchBuzz(){
   pausedRemainingQTime = remainingQTime; // 中断時の残り時間を記録 (float 秒)
       if(b.nick===myNick){
         answerArea.classList.remove('hidden'); answerBtn.disabled=false; startAnswerTimer();
+        // フォーカスしてIME（日本語キーボード）を確実に起動
+        setTimeout(() => {
+          try { answerInput.focus(); } catch(_) {}
+          if (window.innerWidth <= 600) {
+            setTimeout(() => { try { answerInput.scrollIntoView({behavior:'smooth', block:'center'}); } catch(_) {} }, 150);
+          }
+        }, 0);
       }
       updateBuzzState();
     } else if(!b && flowStarted && !answered){
@@ -613,19 +661,21 @@ createBtn.addEventListener('click',async()=>{
   const nick = await showNicknameModal();
   if(!nick) return;
   myNick=nick; joinTs=getServerTime(); roomId=await genId();
-  await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime(),host:nick});
-  // Cloud Functionsでシーケンス生成（章フィルタ＋件数＋選択モード）
+  showLoading('ルームを作成中...');
+  createBtn.disabled = true;
   try {
-    const resp = await fetch(`https://us-central1-kgs-test-68924.cloudfunctions.net/generateSequence`, {
-      method: 'POST', headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ chapters: chs, count: cnt, mode })
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data && data.error || 'generateSequence failed');
-    sequence = Array.isArray(data.sequence) ? data.sequence : [];
-  } catch(e) {
-    // フォールバック: RTDBから生成
+    await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime(),host:nick});
+    // Cloud Functionsでシーケンス生成（章フィルタ＋件数＋選択モード）
     try {
+      const resp = await fetch(`https://us-central1-kgs-test-68924.cloudfunctions.net/generateSequence`, {
+        method: 'POST', headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ chapters: chs, count: cnt, mode })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data && data.error || 'generateSequence failed');
+      sequence = Array.isArray(data.sequence) ? data.sequence : [];
+    } catch(e) {
+      // フォールバック: RTDBから生成
       const snap = await get(ref(db,'questions'));
       const all = Object.values(snap.val()||{}).filter(Boolean);
       const pool = all.filter(q=>chs.includes(+q.chapter));
@@ -644,20 +694,23 @@ createBtn.addEventListener('click',async()=>{
         });
       }
       sequence = pool.slice(0,cnt);
-    } catch(_) {
-      alert('問題データの取得に失敗しました。時間をおいて再度お試しください。');
-      return;
     }
+    await set(ref(db,`rooms/${roomId}/sequence`),sequence);
+    await set(ref(db,`rooms/${roomId}/currentIndex`),0);
+    const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
+    await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+    // scores はサーバのみが更新（UI側では未定義を0扱い）
+    try { onDisconnect(playerRef).remove(); } catch(e) {}
+    startHeartbeat();
+    homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
+    currentRoom.textContent=roomId; startBtn.style.display='block';
+  } catch(err) {
+    alert('ルーム作成に失敗しました。時間をおいて再度お試しください。');
+    return;
+  } finally {
+    hideLoading();
+    createBtn.disabled = false;
   }
-  await set(ref(db,`rooms/${roomId}/sequence`),sequence);
-  await set(ref(db,`rooms/${roomId}/currentIndex`),0);
-  const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
-  await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
-  // scores はサーバのみが更新（UI側では未定義を0扱い）
-  try { onDisconnect(playerRef).remove(); } catch(e) {}
-  startHeartbeat();
-  homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
-  currentRoom.textContent=roomId; startBtn.style.display='block';
   // ホスト用キャプションとボタンを縦並び中央揃えでラップ
   let wrap = document.getElementById('host-caption-wrap');
   if (!wrap) {
@@ -766,6 +819,8 @@ function startPreCountdown(startTs){
   questionCardBlock.classList.remove('hidden');
   questionLabelEl.style.visibility='visible';
   questionLabelEl.textContent = `${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
+  // 問題番号はカウントダウン開始時に更新
+  if (currentNum) currentNum.textContent = idx + 1;
   document.getElementById('pre-countdown').style.display = 'block';
   document.getElementById('question').style.display = 'none';
   document.getElementById('question-timer').style.display = 'none';
@@ -852,7 +907,7 @@ function showQuestion(){
       }
     });
   }
-  currentNum.textContent=idx+1;
+  // currentNum の更新は startPreCountdown で行う
   clearInterval(window._qInt); qTimerEl.style.display='block';
   questionStart=getServerTime(); remainingQTime=TEXT.questionTimeLimit; pausedRemainingQTime = null;
   lastDisplayedQSec = null;
@@ -1141,8 +1196,7 @@ async function submitAnswer() {
     answered = true;
     flowStarted = false;
     pausedRemainingQTime = null;
-
-    questionEl.textContent = sequence[idx].question;
+  revealFullQuestionAndStopSync();
     qTimerEl.textContent = '正解：' + corr;
     qTimerEl.style.display = 'block';
     buzzBtn.disabled = true;
