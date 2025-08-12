@@ -103,7 +103,8 @@ function showInputError(input, message) {
 
 roomCountInput.addEventListener('input', () => {
   const val = roomCountInput.value;
-  if (!val.match(/^[0-9]{1,3}$/) || val < 1 || val > 999) {
+  const n = Number(val);
+  if (!val.match(/^[0-9]{1,3}$/) || !Number.isFinite(n) || n < 1 || n > 999) {
     showInputError(roomCountInput, '1～999の数字を入力してください');
     createBtn.disabled = true;
   roomCountInput.classList.remove('valid-input');
@@ -270,6 +271,7 @@ function showFeedback(isCorrect) {
 let quizData = [], sequence = [], idx = 0;
 let myNick = '', roomId = '', joinTs = 0;
 let players = {}, scores = {}, wrongs = {};
+let settingsCache = {};
 // タイマー表示最適化用（直前表示した残り秒：ceil値）
 let lastDisplayedQSec = null;
 let flowStarted = false, answered = false;
@@ -282,6 +284,7 @@ let handledCorrectFor = new Set();
 let pausedRemainingQTime = null; // 秒
 let detachTypeSync = null; // onValue の unsubscribe
 let heartbeatTimer = null; // 接続維持用ハートビート
+let unsubs = []; // onValue等の解除関数を保持
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -318,7 +321,11 @@ function updateBuzzState(){
   buzzBtn.classList.toggle('disabled-btn', !canBuzz());
 }
 function updateCreateBtn(){
-  createBtn.disabled = !quizData.length || ![...chapterCbs].some(cb=>cb.checked);
+  const hasChapters = [...chapterCbs].some(cb=>cb.checked);
+  const val = roomCountInput.value;
+  const n = Number(val);
+  const validCount = (/^[0-9]{1,3}$/.test(val) && Number.isFinite(n) && n>=1 && n<=999);
+  createBtn.disabled = !(hasChapters && validCount);
 }
 
 // 質問タイマー
@@ -390,28 +397,35 @@ gradCb.addEventListener('change', ()=>{ chapterCbs.forEach(cb=>{ if(['0','1','4'
 allCb.addEventListener('change', ()=>{ chapterCbs.forEach(cb=>cb.checked=allCb.checked); updateCreateBtn(); });
 chapterCbs.forEach(cb=>cb.addEventListener('change',updateCreateBtn));
 
-// 問題ロード（最初だけ取得、以降は監視しない）
-get(ref(db,'questions')).then(snap => {
-  quizData = Object.values(snap.val()||{}).filter(x=>x);
-  updateCreateBtn();
-});
+// 事前の全件取得は行わず、作成時にCloud Functionsから取得する
+updateCreateBtn();
 
 // ウォッチャー
-function watchPlayers(){
-  onValue(ref(db,`rooms/${roomId}/players`), snap=>{
-    players = snap.val()||{}; playersUl.innerHTML='';
-    Object.keys(players).forEach(nick=>{
-      const li = document.createElement('li');
-      li.textContent = `${nick} (${scores[nick]||0}問正解)`;
-      playersUl.appendChild(li);
-    });
+function renderPlayers(){
+  playersUl.innerHTML='';
+  const names = Object.keys(players);
+  names.forEach(nick=>{
+    const li = document.createElement('li');
+    li.textContent = `${nick} (${(scores && scores[nick])||0}問正解)`;
+    playersUl.appendChild(li);
   });
 }
+function watchPlayers(){
+  const off = onValue(ref(db,`rooms/${roomId}/players`), snap=>{
+    players = snap.val()||{};
+    renderPlayers();
+  });
+  unsubs.push(off);
+}
 function watchScores(){
-  onValue(ref(db,`rooms/${roomId}/scores`), snap=>{ scores = snap.val()||{}; watchPlayers(); });
+  const off = onValue(ref(db,`rooms/${roomId}/scores`), snap=>{
+    scores = snap.val()||{};
+    renderPlayers();
+  });
+  unsubs.push(off);
 }
 function watchWrongs(){
-  onValue(ref(db,`rooms/${roomId}/wrongAnswers`), snap=>{
+  const off = onValue(ref(db,`rooms/${roomId}/wrongAnswers`), snap=>{
     wrongs = snap.val()||{};
     const total = Object.keys(players).length;
     if(!answered && Object.keys(wrongs).length >= total){
@@ -428,10 +442,12 @@ function watchWrongs(){
     }
     updateBuzzState();
   });
+  unsubs.push(off);
 }
 function watchSettings(){
-  onValue(ref(db,`rooms/${roomId}/settings`), snap=>{
+  const off = onValue(ref(db,`rooms/${roomId}/settings`), snap=>{
     const s = snap.val()||{};
+    settingsCache = s;
     roomRange.textContent = (s.chapters||[]).map(c=>["序章","第一章","第二章","第三章","第四章","第五章","第六章","第七章"][c]).join('、');
     totalNum.textContent = s.count||0;
     // モード表示
@@ -439,19 +455,22 @@ function watchSettings(){
       roomMode.textContent = s.mode === 'select' ? '選択' : '入力';
     }
   });
+  unsubs.push(off);
 }
 function watchSequence(){
-  onValue(ref(db,`rooms/${roomId}/sequence`), snap=>{ sequence = Object.values(snap.val()||{}).filter(x=>x); });
+  const off = onValue(ref(db,`rooms/${roomId}/sequence`), snap=>{ sequence = Object.values(snap.val()||{}).filter(x=>x); });
+  unsubs.push(off);
 }
 function watchIndex(){
-  onValue(ref(db,`rooms/${roomId}/currentIndex`), snap=>{
+  const off = onValue(ref(db,`rooms/${roomId}/currentIndex`), snap=>{
     idx = snap.val()||0;
     questionLabelEl.textContent = `${TEXT.labels.questionLabelPrefix}${idx+1}${TEXT.labels.questionLabelSuffix}`;
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
-  // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
+    // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
   answered = false;
   flowStarted = false;
+    handledCorrectFor.clear();
   clearTimers();
     // 選択モードでは即座に旧選択肢を消しておく（カウントダウン中に表示残りを防止）
     if (roomModeValue === 'select') {
@@ -463,9 +482,10 @@ function watchIndex(){
     }
   // （旧問題のタイピング進捗監視解除は clearTimers でtypeInterval解除済）
   });
+  unsubs.push(off);
 }
 function watchEvents(){
-  onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
+  const off = onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
   const ev = snap.val(); if(ev.timestamp <= joinTs) return;
     if(ev.correct){
       if (handledCorrectFor.has(ev.questionIndex)) return;
@@ -497,6 +517,8 @@ function watchEvents(){
   let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
   if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
   statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      // すでに正解が確定している場合は再開しない（レース回避）
+      if (handledCorrectFor.has(ev.questionIndex)) return;
       flowStarted = true;
       // pausedRemainingQTime に基づき questionStart を再計算
       if (pausedRemainingQTime != null) {
@@ -524,10 +546,11 @@ function watchEvents(){
       updateBuzzState();
     }
   });
+  unsubs.push(off);
 }
 
 function watchBuzz(){
-  onValue(ref(db,`rooms/${roomId}/buzz`), snap=>{
+  const off = onValue(ref(db,`rooms/${roomId}/buzz`), snap=>{
     const b = snap.val();
     if(b && flowStarted && !answered){
       flowStarted = false; clearInterval(window._qInt); pauseTypewriter();
@@ -543,11 +566,13 @@ function watchBuzz(){
       answerInput.value=''; answerBtn.disabled=true; updateBuzzState();
     }
   });
+  unsubs.push(off);
 }
 function watchPreStart(){
-  onValue(ref(db,`rooms/${roomId}/settings/preStart`), snap=>{
+  const off = onValue(ref(db,`rooms/${roomId}/settings/preStart`), snap=>{
     const ts=snap.val(); if(ts){ startBtn.style.display='none'; startPreCountdown(ts); }
   });
+  unsubs.push(off);
 }
 
 // ルームID生成
@@ -579,7 +604,6 @@ document.addEventListener('visibilitychange', ()=>{
 
 // ルーム作成
 createBtn.addEventListener('click',async()=>{
-  if(!quizData.length){ alert('読み込み中…'); return; }
   const chs=[...chapterCbs].filter(cb=>cb.checked).map(cb=>+cb.value);
   const cnt=parseInt(roomCount.value,10);
   // モード取得
@@ -589,32 +613,47 @@ createBtn.addEventListener('click',async()=>{
   const nick = await showNicknameModal();
   if(!nick) return;
   myNick=nick; joinTs=getServerTime(); roomId=await genId();
-  await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime()});
-  const pool = quizData.filter(q=>chs.includes(+q.chapter));
-  // Fisher-Yatesシャッフル
-  for(let i=pool.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [pool[i],pool[j]]=[pool[j],pool[i]];
-  }
-  // 選択肢順同期用: 各問題にchoicesOrderを付与
-  if (mode === 'select') {
-    pool.forEach(q => {
-      // 0:answer, 1:ng1, 2:ng2, 3:ng3, 4:ng4
-      let order = [0,1,2,3,4];
-      for (let i = order.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [order[i], order[j]] = [order[j], order[i]];
-      }
-      q.choicesOrder = order;
+  await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime(),host:nick});
+  // Cloud Functionsでシーケンス生成（章フィルタ＋件数＋選択モード）
+  try {
+    const resp = await fetch(`https://us-central1-kgs-test-68924.cloudfunctions.net/generateSequence`, {
+      method: 'POST', headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ chapters: chs, count: cnt, mode })
     });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data && data.error || 'generateSequence failed');
+    sequence = Array.isArray(data.sequence) ? data.sequence : [];
+  } catch(e) {
+    // フォールバック: RTDBから生成
+    try {
+      const snap = await get(ref(db,'questions'));
+      const all = Object.values(snap.val()||{}).filter(Boolean);
+      const pool = all.filter(q=>chs.includes(+q.chapter));
+      for(let i=pool.length-1;i>0;i--){
+        const j=Math.floor(Math.random()*(i+1));
+        [pool[i],pool[j]]=[pool[j],pool[i]];
+      }
+      if (mode === 'select') {
+        pool.forEach(q => {
+          let order = [0,1,2,3,4];
+          for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+          }
+          q.choicesOrder = order;
+        });
+      }
+      sequence = pool.slice(0,cnt);
+    } catch(_) {
+      alert('問題データの取得に失敗しました。時間をおいて再度お試しください。');
+      return;
+    }
   }
-  sequence=pool.slice(0,cnt);
   await set(ref(db,`rooms/${roomId}/sequence`),sequence);
   await set(ref(db,`rooms/${roomId}/currentIndex`),0);
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
-  // scores 初期化（ホストを 0 で登録）
-  await set(ref(db,`rooms/${roomId}/scores`), { [myNick]: 0 });
+  // scores はサーバのみが更新（UI側では未定義を0扱い）
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -670,10 +709,7 @@ joinRoomBtn.addEventListener('click',async()=>{
   myNick=nick; joinTs=getServerTime();
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
-  // scores に参加者を 0 で登録（既存なら上書きしない）
-  try {
-    await runTransaction(ref(db,`rooms/${roomId}/scores/${myNick}`), cur => cur ?? 0);
-  } catch(e) { /* noop */ }
+  // scores はサーバのみが更新
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -788,20 +824,26 @@ function showQuestion(){
   clearInterval(window._typeInt);
   typeSyncRef = ref(db, `rooms/${roomId}/typePos/${idx}`);
   let lastTypePos = 0;
+  // Hostのみタイプ進行を同期送信（hostはsettings.hostで安定判定）
+  const isHost = settingsCache && settingsCache.host && myNick === settingsCache.host;
+  let lastSentAt = 0;
   window._typeInt = setInterval(() => {
     if (typePos < currentText.length) {
       questionEl.textContent += currentText[typePos++];
-      if (myNick === Object.keys(players)[0]) {
-        if (typePos > lastTypePos) {
+      if (isHost && typePos > lastTypePos) {
+        // デバウンス: 50ms以上経過か3文字以上進んだら送信
+        const now = performance.now();
+        if (now - lastSentAt > 50 || typePos - lastTypePos >= 3) {
           set(typeSyncRef, typePos);
           lastTypePos = typePos;
+          lastSentAt = now;
         }
       }
     } else {
       clearInterval(window._typeInt);
     }
   }, TEXT.typeSpeed);
-  if (myNick !== Object.keys(players)[0]) {
+  if (!isHost) {
     detachTypeSync = onValue(typeSyncRef, snap => {
       const synced = snap.val() || 0;
       if (synced > typePos && typePos < currentText.length) {
@@ -939,13 +981,17 @@ function resumeTypewriter(){
   clearInterval(window._typeInt);
   typePos = questionEl.textContent.length;
   let lastTypePos = typePos;
+  const isHost = settingsCache && settingsCache.host && myNick === settingsCache.host;
+  let lastSentAt = 0;
   window._typeInt = setInterval(() => {
     if (typePos < currentText.length) {
       questionEl.textContent += currentText[typePos++];
-      if (myNick === Object.keys(players)[0]) {
-        if (typePos > lastTypePos) {
+      if (isHost && typePos > lastTypePos) {
+        const now = performance.now();
+        if (now - lastSentAt > 50 || typePos - lastTypePos >= 3) {
           set(typeSyncRef, typePos);
           lastTypePos = typePos;
+          lastSentAt = now;
         }
       }
     } else {
@@ -1035,7 +1081,7 @@ buzzBtn.addEventListener('click', async (e) => {
       answerInput.value = '';
       answered = false;
       // 失敗したのでタイプ再開 & タイマー再開
-      if (!flowStarted) {
+      if (!flowStarted && !handledCorrectFor.has(idx)) { // 直近で正解が確定していない場合のみ再開
         flowStarted = true;
         if (pausedRemainingQTime != null) {
           questionStart = getServerTime() - (TEXT.questionTimeLimit - pausedRemainingQTime) * 1000;
@@ -1078,9 +1124,9 @@ function createRipple(e) {
 // 解答ボタンのクリック・Enter対応
 async function submitAnswer() {
   answerBtn.disabled = true;
-  const guess = answerInput.value.trim();
+  const guess = normalizeJa(answerInput.value);
   // 空欄でも回答可能にし、不正解として処理
-  const corr = sequence[idx].answer.trim();
+  const corr = normalizeJa(sequence[idx].answer);
   const isCorrect = (guess === corr && guess !== '');
 
   // フィードバック表示
@@ -1191,6 +1237,11 @@ async function showResults(){
   quizAppDiv.classList.add('hidden');
   resultsDiv.classList.remove('hidden');
   allowUnload = true;
+  // リスナー解除 & タイマー停止（リソース解放）
+  try { unsubs.forEach(u=>{ if (typeof u === 'function') u(); }); } catch(e) {}
+  unsubs = [];
+  clearTimers();
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   // 最新プレイヤー/スコア/イベントを取得（途中参加対策でリアルタイム蓄積に依存しない）
   const [ps, sc, evSnap] = await Promise.all([
     get(ref(db,`rooms/${roomId}/players`)),
@@ -1248,7 +1299,13 @@ async function showResults(){
 
 
 // 離脱後削除
-window.addEventListener('unload',()=>{ remove(ref(db,`rooms/${roomId}/players/${myNick}`)); });
+window.addEventListener('unload',()=>{ 
+  try { unsubs.forEach(u=>{ if (typeof u === 'function') u(); }); } catch(e) {}
+  unsubs = [];
+  clearTimers();
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  remove(ref(db,`rooms/${roomId}/players/${myNick}`)); 
+});
 
 // --- 最終結果画面の空欄回答と時間切れの区別 ---
 // 回答一覧表示部分を修正
@@ -1261,4 +1318,18 @@ function getAnswerDisplay(ans, timedOut) {
 // statusElにテキストをセット。空の場合は全角スペースで高さ維持
 function setStatus(text) {
   statusEl.textContent = text && text.trim() ? text : '　';
+}
+
+// 日本語の軽い正規化（全角/半角・前後空白・一般記号の除去）
+function normalizeJa(s) {
+  if (!s) return '';
+  let t = (''+s).trim();
+  // 全角英数字→半角、全角スペース→半角
+  t = t.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  t = t.replace(/　/g, ' ');
+  // 句読点・記号など軽めに除去（必要に応じて拡張）
+  t = t.replace(/[\s\u3000]+/g, ' ');
+  t = t.replace(/[、。・,\.\-_/\(\)\[\]{}\u3001\u3002\u30fb]/g, '');
+  // カタカナはそのまま。ひらがな⇔カタカナ変換は仕様次第。
+  return t;
 }

@@ -1,0 +1,40 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        "settings": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.hasChildren(['chapters','count','mode','createdAt','host']) && newData.child('chapters').isList() && newData.child('count').isNumber() && (newData.child('mode').val() === 'input' || newData.child('mode').val() === 'select') && newData.child('createdAt').isNumber() && newData.child('host').isString()"
+        },
+        "players": {
+          ".read": true,
+          "$nick": {
+            ".write": "auth == null || auth.token.email == $nick || true",
+            ".validate": "newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber()"
+          }
+        },
+        "scores": {
+          ".read": true,
+          ".write": false
+        },
+        "events": {
+          ".read": true,
+          "$eventId": {
+            ".write": true,
+            ".validate": "newData.hasChildren(['nick','correct','answer','questionIndex','timestamp']) && newData.child('nick').isString() && newData.child('timestamp').isNumber()"
+          }
+        },
+        "buzz": { ".read": true, ".write": true },
+        "selectBuzz": { ".read": true, ".write": true },
+        "wrongAnswers": { ".read": true, ".write": true },
+        "sequence": { ".read": true, ".write": true },
+        "currentIndex": { ".read": true, ".write": true },
+        "typePos": { ".read": true, ".write": true }
+      }
+    },
+    "questions": { ".read": true, ".write": false }
+  }
+}
