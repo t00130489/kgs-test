@@ -94,24 +94,20 @@
             </div>
           </div>
         </div>
-        <div class="form-row" style="margin-bottom:0.5em;">
-          <span class="range-label">モード</span>
-        </div>
-        <div class="form-row" style="margin-bottom:0.5em;">
-          <div class="card-radio-group">
-            <label class="custom-radio">
-              <input type="radio" name="quiz-mode" id="mode-input" value="input" checked>
-              <span class="radio-mark"></span>
-              <span class="radio-label">入力モード</span>
-            </label>
-            <label class="custom-radio">
-              <input type="radio" name="quiz-mode" id="mode-select" value="select">
-              <span class="radio-mark"></span>
-              <span class="radio-label">選択モード</span>
+  <div class="form-row mode-row" style="margin-bottom:1.7em;">
+          <label for="mode-switch" class="range-label">モード</label>
+          <div class="mode-switch-wrap" aria-label="モード切り替え">
+            <label class="switch-toggle switch-variant-rocker">
+              <input type="checkbox" id="mode-switch" role="switch" aria-label="入力モード/選択モード 切替">
+              <span class="switch-track">
+                <span class="switch-label left">入力</span>
+                <span class="switch-label right">選択</span>
+                <span class="switch-thumb" aria-hidden="true"></span>
+              </span>
             </label>
           </div>
         </div>
-        <div class="form-row">
+  <div class="form-row count-row">
           <label for="room-count" class="range-label">出題問題数</label>
           <input type="number" id="room-count" class="styled-input" value="10" min="1" max="999" required pattern="^[0-9]{1,3}$" inputmode="numeric" placeholder="1～999">
         </div>

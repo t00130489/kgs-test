@@ -87,9 +87,16 @@ const createBtn   = document.getElementById('createBtn');
 const joinRoomBtn = document.getElementById('joinRoomBtn');
 const roomIdInput = document.getElementById('roomIdInput');
 joinRoomBtn.disabled = true;
-// モード選択ラジオボタン取得
-const modeInputRadio = document.getElementById('mode-input');
-const modeSelectRadio = document.getElementById('mode-select');
+// モード選択スイッチ取得（未チェック=入力, チェック=選択）
+const modeSwitch = document.getElementById('mode-switch');
+if (modeSwitch) {
+  // 既定は入力（未チェック）。ARIAの状態同期
+  modeSwitch.checked = false;
+  modeSwitch.setAttribute('aria-checked', String(modeSwitch.checked));
+  modeSwitch.addEventListener('change', () => {
+    modeSwitch.setAttribute('aria-checked', String(modeSwitch.checked));
+  });
+}
 
 
 // バリデーション用エラー表示
@@ -723,8 +730,8 @@ document.addEventListener('visibilitychange', ()=>{
 createBtn.addEventListener('click',async()=>{
   const chs=[...chapterCbs].filter(cb=>cb.checked).map(cb=>+cb.value);
   const cnt=parseInt(roomCount.value,10);
-  // モード取得
-  const mode = modeInputRadio.checked ? 'input' : 'select';
+  // モード取得（スイッチ：未チェック→input、チェック→select）
+  const mode = modeSwitch && modeSwitch.checked ? 'select' : 'input';
   roomModeValue = mode; // ここでグローバル変数にもセット
   if(!chs.length||cnt<1){ alert('範囲と数を指定'); return; }
   const nick = await showNicknameModal();

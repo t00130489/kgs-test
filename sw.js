@@ -1,6 +1,6 @@
 // Service Worker 改善 (#12): バージョン一元管理 + 柔軟な戦略
 // version.js が self スコープにあれば利用。無ければ埋め込みのフォールバック。
-const EMBEDDED_VERSION = '813-3m';
+const EMBEDDED_VERSION = '813-4m';
 const APP_VERSION = self.APP_VERSION || EMBEDDED_VERSION;
 const CACHE_NAME = `kgs-quiz-cache-v${APP_VERSION}`;
 // バージョン付き参照と素のパス双方をプリキャッシュ（HTML は network-first で常に更新されるので最低限）

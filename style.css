@@ -448,7 +448,7 @@ header {
   gap: 0.5rem;
 }
 #chapter-selection .wide { grid-column: span 2; margin-top: 0; margin-bottom: 0; }
-#room-count { width: 8ch; }
+#room-count { width: 7ch; }
 
 .join-row { display: flex; gap: 0.75rem; }
 
@@ -779,6 +779,76 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   background: #e3f2fd;
   box-shadow: 0 0 0 2px #90caf9;
 }
+
+/* スイッチトグル（入力 ←→ 選択） */
+.mode-switch-wrap { display: flex; align-items: center; justify-content: flex-start; padding-left: 0.25em; }
+.mode-row { gap: 0.7em; align-items: center; }
+.count-row { gap: 0.7em; align-items: center; }
+.switch-toggle { position: relative; display: inline-block; }
+.switch-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  --h: 38px; --w: clamp(160px, 44vw, 220px); --pad: 4px; --thumb: 30px;
+  display: inline-flex; align-items: center; position: relative;
+  width: var(--w); height: var(--h);
+  background: #f0f4ff; border: 2px solid #1976d2; border-radius: calc(var(--h) / 2);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06);
+  transition: background 0.25s ease, border-color 0.25s ease;
+  padding: 0 var(--pad);
+  user-select: none;
+}
+.switch-label { position: absolute; top: 50%; transform: translateY(-50%); font-weight: 700; letter-spacing: 0.04em; }
+.switch-label.left { left: 14px; color: #1976d2; opacity: 1; font-weight: 600; transition: opacity 0.2s, color 0.2s; }
+.switch-label.right { right: 14px; color: #1976d2; opacity: 0.55; font-weight: 600; transition: opacity 0.2s, color 0.2s; }
+.switch-thumb {
+  position: absolute; top: 50%; left: calc(var(--pad) + 2px);
+  width: var(--thumb); height: var(--thumb);
+  background: #1976d2; border-radius: 50%; transform: translateY(-50%);
+  box-shadow: 0 6px 16px rgba(25, 118, 210, 0.35);
+  transition: left 0.25s ease, width 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.switch-toggle input:focus-visible + .switch-track { outline: 2px solid #90caf9; outline-offset: 2px; }
+.switch-toggle input:checked + 
+.switch-track { background: #fff; border-color: #1976d2; }
+.switch-toggle input:checked + .switch-track .switch-thumb { left: calc(100% - var(--thumb) - var(--pad) - 2px); background: #1976d2; box-shadow: 0 6px 16px rgba(0,0,0,0.15); }
+.switch-toggle input:checked + .switch-track .switch-label.left { opacity: 0.55; }
+.switch-toggle input:checked + .switch-track .switch-label.right { opacity: 1; color: #2a3a5e; }
+
+/* 文字の読みやすさ向上（既存色のみ使用） */
+.switch-track { color: #2a3a5e; }
+.switch-toggle .switch-thumb { outline: none; }
+.switch-toggle input:not(:disabled) + .switch-track:active .switch-thumb { width: calc(var(--thumb) + 4px); }
+
+/* 旧サム版バリアント（outline/segment/compact）は削除 */
+
+/* 別パターン: ロッカースイッチ（サム無し、選択側にハイライト） */
+.switch-variant-rocker .switch-track {
+  --h: 40px; --w: clamp(170px, 40vw, 210px);
+  padding: 0; /* ハイライトの計算を簡単にするため内側余白なし */
+  display: block; /* 擬似要素の基準に */
+}
+.switch-variant-rocker .switch-thumb { display: none; }
+.switch-variant-rocker .switch-label {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
+  width: 50%; text-align: center; z-index: 1; pointer-events: none;
+  font-weight: 700; letter-spacing: 0.02em; color: #2a3a5e;
+}
+.switch-variant-rocker .switch-label.left { left: 0; }
+.switch-variant-rocker .switch-label.right { left: 50%; }
+.switch-variant-rocker .switch-track::after {
+  content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px);
+  background: var(--primary); border-radius: calc(var(--h)/2 - 2px);
+  transition: left 0.24s ease;
+}
+/* 選択状態でハイライトを右へ、文字色を反転 */
+.switch-variant-rocker input:not(:checked) + .switch-track .switch-label.left { color: #fff; }
+.switch-variant-rocker input:not(:checked) + .switch-track .switch-label.right { color: #2a3a5e; opacity: 0.9; }
+.switch-variant-rocker input:checked + .switch-track::after { left: calc(50%); }
+.switch-variant-rocker input:checked + .switch-track .switch-label.right { color: #fff; }
+.switch-variant-rocker input:checked + .switch-track .switch-label.left { color: #2a3a5e; opacity: 0.9; }
+
+/* ラベルの余白と一体感 */
+/* ラベルは index.html の上段の range-label を使用 */
 
 /* --- ルーム作成カードブロックの余白調整 ---
    .card.home-card の margin-bottom, padding-bottom でカード下部の余白を調整
