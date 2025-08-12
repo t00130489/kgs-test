@@ -44,13 +44,20 @@ exports.scheduledCleanupRooms = onSchedule(
  * クライアントは correct: true の events を push するだけで、スコア加算はここで統一。
  * 二重加算防止のため awards/{questionIndex} で勝者をトランザクション確保。
  */
-exports.onCorrectEvent = onValueCreated("/rooms/{roomId}/events/{eventId}", async (event) => {
+// RTDB トリガー: 既定インスタンスを明示して取りこぼしを防止
+exports.onCorrectEvent = onValueCreated(
+  { ref: "/rooms/{roomId}/events/{eventId}", instance: "kgs-test-68924-default-rtdb", region: "us-central1" },
+  async (event) => {
   try {
     const val = event.data.val();
     if (!val || !val.correct) return; // 不正解 or 型不正は無視
     const roomId = event.params.roomId;
-    const questionIndex = val.questionIndex;
-    if (typeof questionIndex !== 'number') return; // ガード
+    // questionIndex は string で来る可能性があるため安全に数値化
+    const questionIndex = Number(val.questionIndex);
+    if (!Number.isFinite(questionIndex)) {
+      console.log("onCorrectEvent: invalid questionIndex", { received: val.questionIndex, type: typeof val.questionIndex });
+      return; // 不正な値は無視
+    }
 
     const awardRef = db.ref(`rooms/${roomId}/awards/${questionIndex}`);
     const txnResult = await awardRef.transaction(cur => {
@@ -62,8 +69,12 @@ exports.onCorrectEvent = onValueCreated("/rooms/{roomId}/events/{eventId}", asyn
     if (txnResult.committed) {
       // スコア加算（初回のみ）
       await db.ref(`rooms/${roomId}/scores/${val.nick}`).transaction(s => (s || 0) + 1);
+      console.log("onCorrectEvent: score incremented", { roomId, nick: val.nick, questionIndex });
+    } else {
+      console.log("onCorrectEvent: award already taken", { roomId, questionIndex });
     }
   } catch (e) {
     console.error('onCorrectEvent error', e);
   }
-});
+}
+);
