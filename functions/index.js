@@ -30,9 +30,6 @@ exports.scheduledCleanupRooms = onSchedule(
 
     if (Object.keys(updates).length) {
       await roomsRef.update(updates);
-      console.log("Deleted rooms:", Object.keys(updates));
-    } else {
-      console.log("No old rooms to delete");
     }
   }
 );
@@ -54,10 +51,7 @@ exports.onCorrectEvent = onValueCreated(
     const roomId = event.params.roomId;
     // questionIndex は string で来る可能性があるため安全に数値化
     const questionIndex = Number(val.questionIndex);
-    if (!Number.isFinite(questionIndex)) {
-      console.log("onCorrectEvent: invalid questionIndex", { received: val.questionIndex, type: typeof val.questionIndex });
-      return; // 不正な値は無視
-    }
+  if (!Number.isFinite(questionIndex)) return; // 不正な値は無視
 
     const awardRef = db.ref(`rooms/${roomId}/awards/${questionIndex}`);
     const txnResult = await awardRef.transaction(cur => {
@@ -69,9 +63,6 @@ exports.onCorrectEvent = onValueCreated(
     if (txnResult.committed) {
       // スコア加算（初回のみ）
       await db.ref(`rooms/${roomId}/scores/${val.nick}`).transaction(s => (s || 0) + 1);
-      console.log("onCorrectEvent: score incremented", { roomId, nick: val.nick, questionIndex });
-    } else {
-      console.log("onCorrectEvent: award already taken", { roomId, questionIndex });
     }
   } catch (e) {
     console.error('onCorrectEvent error', e);

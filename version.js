@@ -4,10 +4,7 @@
 (function(global){
   const APP_VERSION = '812-2t';
   global.APP_VERSION = APP_VERSION;
-  if (typeof window !== 'undefined') {
-    // 早期アクセス用にコンソール表示
-    console.log('[APP_VERSION]', APP_VERSION);
-  }
+  // コンソール出力は本番では不要
 })(typeof self !== 'undefined' ? self : window);
 
 // ESM 環境用エクスポート（script type="module" での import を想定）
