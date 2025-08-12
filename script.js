@@ -115,12 +115,12 @@ roomCountInput.addEventListener('input', () => {
 });
 roomIdInput.addEventListener('input', () => {
   const val = roomIdInput.value;
-  if (val.match(/^[0-9]{5}$/)) {
+  if (val.match(/^[0-9]{4}$/)) {
     showInputError(roomIdInput, '');
     joinRoomBtn.disabled = false;
     roomIdInput.classList.add('valid-input');
   } else {
-    showInputError(roomIdInput, '5桁の数字のみ入力してください');
+    showInputError(roomIdInput, '4桁の数字のみ入力してください');
     joinRoomBtn.disabled = true;
     roomIdInput.classList.remove('valid-input');
   }
@@ -473,11 +473,8 @@ function watchEvents(){
       clearTimers(); answered = true; flowStarted = false;
       questionEl.textContent = sequence[idx].question;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が awards トランザクションを確定後に行う。
-      // 体感即時性のためローカルで一時的に scores を楽観的更新（サーバ更新が来たら上書きされる）。
-      if (!scores[ev.nick]) scores[ev.nick] = 0;
-      scores[ev.nick] += 1;
-      watchPlayers(); // プレイヤー一覧再描画（スコア表示更新のため）
+  // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
+  // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -558,7 +555,7 @@ async function genId(){
   const roomsRef = ref(db,'rooms');
   let id, exists=true;
   while(exists){
-    id = String(10000 + Math.floor(Math.random()*90000));
+  id = String(1000 + Math.floor(Math.random()*9000));
     exists = (await get(child(roomsRef,id))).exists();
   }
   return id;
@@ -616,6 +613,8 @@ createBtn.addEventListener('click',async()=>{
   await set(ref(db,`rooms/${roomId}/currentIndex`),0);
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  // scores 初期化（ホストを 0 で登録）
+  await set(ref(db,`rooms/${roomId}/scores`), { [myNick]: 0 });
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -671,6 +670,10 @@ joinRoomBtn.addEventListener('click',async()=>{
   myNick=nick; joinTs=getServerTime();
   const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
   await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
+  // scores に参加者を 0 で登録（既存なら上書きしない）
+  try {
+    await runTransaction(ref(db,`rooms/${roomId}/scores/${myNick}`), cur => cur ?? 0);
+  } catch(e) { /* noop */ }
   try { onDisconnect(playerRef).remove(); } catch(e) {}
   startHeartbeat();
   homeDiv.classList.add('hidden'); quizAppDiv.classList.remove('hidden');
@@ -1197,22 +1200,12 @@ async function showResults(){
   players = ps.val() || {};
   const eventsObj = evSnap.val() || {};
   const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
-  // events から正解数を再集計
-  const eventScores = {};
-  eventsArr.forEach(ev => {
-    if (ev.correct && ev.nick) {
-      eventScores[ev.nick] = (eventScores[ev.nick] || 0) + 1;
-    }
-  });
-  // DBのscoresも fallback で参照
+  // 最終結果の正解数は DB の scores を参照
   scores = sc.val() || {};
-  Object.keys(scores).forEach(nick => {
-    if (!(nick in eventScores)) eventScores[nick] = scores[nick] || 0;
-  });
-  const scoreValues = Object.values(eventScores).map(v => v || 0);
+  const scoreValues = Object.values(scores).map(v => v || 0);
   const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
   const winners = maxScore > 0
-    ? Object.keys(eventScores).filter(nick => (eventScores[nick] || 0) === maxScore)
+    ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
     : [];
 
   let html = `<h2>${TEXT.labels.resultsTitle}</h2>`;
@@ -1223,7 +1216,7 @@ async function showResults(){
   }
   html += `<h3>${TEXT.labels.participantsHeader}</h3><ul>`;
   Object.keys(players).forEach(nick => {
-    const score = eventScores[nick] || 0;
+    const score = (scores && typeof scores[nick] === 'number') ? scores[nick] : 0;
     const cls = winners.includes(nick) ? ' class="winner"' : '';
     html += `<li${cls}>${nick}：${score}問正解</li>`;
   });
