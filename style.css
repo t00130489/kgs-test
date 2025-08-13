@@ -594,6 +594,12 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 #nextBtn { margin-top: 1rem; }
+ #quiz-app #nextBtn { margin-bottom: 1.2rem; }
+
+/* ページ下部の安全余白（全ページ適用） */
+main {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
 .hidden { display: none; }
 
 .highlight {
