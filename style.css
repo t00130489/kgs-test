@@ -400,6 +400,42 @@ body {
   margin: auto;
 }
 
+/* Toast */
+.toast-container {
+  position: fixed;
+  z-index: 3000;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: #2a3a5e;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  padding: 10px 12px;
+  min-width: 220px;
+  max-width: 80vw;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: auto;
+}
+.toast .toast-msg { flex: 1 1 auto; }
+.toast .toast-action {
+  color: #bbdefb;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
 header {
   text-align: center;
   padding: 0.7rem 0 0.2rem 0; /* タイトル下の余白を少し狭く */
