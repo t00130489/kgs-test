@@ -361,7 +361,7 @@ nicknameModal.innerHTML = `
     <div style="font-size: 1.1rem; margin-bottom: 1rem;">あなたのニックネームを入力してください</div>
     <input id="nickname-input" type="text" maxlength="15" style="width: 90%; font-size: 1.1rem; padding: 0.5rem; border-radius: 6px; border: 1px solid #ccc; margin-bottom: 1.2rem;" autocomplete="off">
     <br>
-    <button id="nickname-ok" class="btn-primary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; margin-right: 1.2rem;">OK</button>
+  <button id="nickname-ok" class="btn-primary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; margin-right: 1.2rem;" disabled>OK</button>
     <button id="nickname-cancel" class="btn-secondary" style="font-size: 1.1rem; padding: 0.6rem 1.5rem; background: #e0e0e0; color: #555; border: 1px solid #ccc;">キャンセル</button>
   </div>
 `;
@@ -375,6 +375,7 @@ function showNicknameModal() {
     const cancelBtn = modal.querySelector('#nickname-cancel');
     modal.style.display = 'flex';
     input.value = '';
+    okBtn.disabled = true;
     setTimeout(() => {
       input.focus();
       // スマホで中央にスクロール
@@ -389,6 +390,7 @@ function showNicknameModal() {
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       input.removeEventListener('keydown', onKey);
+      input.removeEventListener('input', onInput);
       resolve(val);
     }
     function onOk() {
@@ -403,9 +405,14 @@ function showNicknameModal() {
       if(e.key==='Enter') onOk();
       if(e.key==='Escape') onCancel();
     }
+    function onInput() {
+      const has = input.value.trim().length > 0;
+      okBtn.disabled = !has;
+    }
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
     input.addEventListener('keydown', onKey);
+    input.addEventListener('input', onInput);
   });
 }
 
@@ -416,6 +423,90 @@ const questionCardBlock = document.getElementById('question-card-block');
 
 // フィードバックオーバーレイ取得
 const feedbackOverlay = document.getElementById('feedback-overlay');
+// Confetti canvas
+const confettiCanvas = document.getElementById('confetti-canvas');
+let confettiCtx = null;
+if (confettiCanvas) {
+  const resize = () => {
+    confettiCanvas.width = window.innerWidth;
+    confettiCanvas.height = window.innerHeight;
+  };
+  resize();
+  window.addEventListener('resize', resize);
+  confettiCtx = confettiCanvas.getContext('2d');
+}
+
+// Sound disabled by request
+function playJingle() { /* disabled */ }
+
+// Confetti particle system (very small, single burst)
+function burstConfetti({x=window.innerWidth/2, y=window.innerHeight*0.35, count=90}={}) {
+  if (!confettiCtx || !confettiCanvas) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const colors = ['#ff5252','#ffb300','#ffd54f','#4dd0e1','#81c784','#ba68c8'];
+  const parts = Array.from({length: Math.max(20, Math.min(200, count))}, () => ({
+    x, y,
+    vx: (Math.random()*2-1) * 6,
+    vy: (Math.random()*-1) * (6+Math.random()*6) - 4,
+    size: 3 + Math.random()*4,
+    rot: Math.random()*Math.PI*2,
+    vr: (Math.random()*2-1) * 0.2,
+    color: colors[(Math.random()*colors.length)|0],
+    life: 700 + Math.random()*500
+  }));
+  const start = performance.now();
+  let last = start;
+  const grav = 0.18;
+  function frame(t) {
+    const dt = t - last; last = t;
+    confettiCtx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+    let alive = false;
+    for (const p of parts) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      alive = true;
+      p.vy += grav;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      confettiCtx.save();
+      confettiCtx.translate(p.x, p.y);
+      confettiCtx.rotate(p.rot);
+      confettiCtx.fillStyle = p.color;
+      confettiCtx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+      confettiCtx.restore();
+    }
+    if (alive && t - start < 1600) requestAnimationFrame(frame);
+    else confettiCtx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+  }
+  requestAnimationFrame(ts => { last = ts; frame(ts); });
+}
+
+// Floating score bubble
+function floatScore(text='+1') {
+  const el = document.createElement('div');
+  el.className = 'float-score';
+  // split into styled spans for richer look
+  el.innerHTML = `<span class="fs-text">${text}</span><span class="fs-spark">✨</span>`;
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 1100);
+}
+
+function celebrateCorrect(options={}) {
+  try {
+    // subtle card glow
+    const card = document.getElementById('question-card-block');
+    if (card) {
+      card.classList.remove('celebrate-glow');
+      // force reflow to restart animation
+      void card.offsetWidth;
+      card.classList.add('celebrate-glow');
+    }
+    burstConfetti({ count: options.count || 100 });
+    playJingle(options.pitch || 880);
+    floatScore(options.scoreText || '+1');
+  } catch(_) {}
+}
 
 // 簡易ローディングオーバーレイ
 let loadingOverlay;
@@ -789,6 +880,13 @@ function watchEvents(){
       clearTimers(); answered = true; flowStarted = false;
   revealFullQuestionAndStopSync();
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      // Celebrate locally (slightly stronger if I'm the winner)
+      if (ev && ev.nick) {
+        const mine = (ev.nick === myNick);
+        celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
+      } else {
+        celebrateCorrect({});
+      }
   // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
   // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
       qTimerEl.textContent = '正解：' + ev.answer;
@@ -1390,7 +1488,8 @@ function showQuestion(){
                 const who = selectData && selectData.nick ? selectData.nick : '他のプレイヤー';
                 if (who === myNick) {
                   statusEl.textContent = `正解！🎉`;
-                  showFeedback(true);
+          showFeedback(true);
+          celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
                 } else {
                   statusEl.textContent = `${who} さんが先に押しました…`;
                 }
@@ -1399,7 +1498,8 @@ function showQuestion(){
             } else {
               // 一着で正解
               statusEl.textContent = `正解！🎉`;
-              showFeedback(true);
+        showFeedback(true);
+        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
               Array.from(choiceArea.children).forEach(b => b.disabled = true);
               await push(ref(db, `rooms/${roomId}/events`), {
                 nick: myNick,
@@ -1607,6 +1707,7 @@ async function submitAnswer() {
     flowStarted = false;
     pausedRemainingQTime = null;
   revealFullQuestionAndStopSync();
+  celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
     if (!spectatorUntilNext) {
       qTimerEl.textContent = '正解：' + corr;
       qTimerEl.style.display = 'block';
