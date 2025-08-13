@@ -400,6 +400,42 @@ body {
   margin: auto;
 }
 
+/* Toast */
+.toast-container {
+  position: fixed;
+  z-index: 3000;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: #2a3a5e;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  padding: 10px 12px;
+  min-width: 220px;
+  max-width: 80vw;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: auto;
+}
+.toast .toast-msg { flex: 1 1 auto; }
+.toast .toast-action {
+  color: #bbdefb;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
 header {
   text-align: center;
   padding: 0.7rem 0 0.2rem 0; /* タイトル下の余白を少し狭く */
@@ -699,6 +735,73 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 /* hiddenクラスより優先して非表示にする */
 .feedback-overlay.hidden {
   display: none !important;
+}
+
+/* --- Celebration FX --- */
+/* Confetti canvas layer */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1600; /* overlay(1000)より上 */
+}
+
+/* Correct glow pulse on question card */
+@keyframes celebrate-glow {
+  0% { box-shadow: 0 0 0 rgba(255, 215, 0, 0); }
+  20% { box-shadow: 0 0 24px rgba(255, 215, 0, 0.75); }
+  60% { box-shadow: 0 0 14px rgba(255, 215, 0, 0.35); }
+  100% { box-shadow: 0 0 0 rgba(255, 215, 0, 0); }
+}
+.celebrate-glow {
+  animation: celebrate-glow 900ms ease-out;
+}
+
+/* Floating score bubble */
+@keyframes float-up-fade {
+  0% { transform: translate(-50%, 0) scale(0.9); opacity: 0; }
+  10% { opacity: 1; transform: translate(-50%, -6px) scale(1.05); }
+  60% { opacity: 1; }
+  100% { transform: translate(-50%, -60px) scale(1); opacity: 0; }
+}
+.float-score {
+  position: fixed;
+  left: 50%;
+  top: calc(20% + 40px);
+  transform: translate(-50%, 0);
+  background: linear-gradient(135deg, rgba(255,255,255,0.65), rgba(255,255,255,0.35));
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  color: #1d2025;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(255,255,255,0.6);
+  z-index: 1700;
+  animation: float-up-fade 900ms ease-out forwards;
+  pointer-events: none;
+  border: 1px solid rgba(255, 200, 0, 0.65);
+}
+.float-score .fs-text { text-shadow: 0 1px 0 rgba(255,255,255,0.7); }
+.float-score .fs-spark {
+  margin-left: 6px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+  animation: sparkle-pulse 900ms ease-out;
+}
+@keyframes sparkle-pulse {
+  0% { transform: scale(0.8) rotate(-10deg); opacity: 0; }
+  30% { transform: scale(1.05) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1) rotate(8deg); opacity: 0.85; }
+}
+
+/* Reduced motion: keep subtle */
+@media (prefers-reduced-motion: reduce) {
+  .celebrate-glow { animation-duration: 300ms; }
+  .float-score { animation: none; opacity: 1; }
+  .float-score .fs-spark { animation: none; }
 }
 .valid-input:focus, .valid-input {
   border-color: #1565c0 !important;
