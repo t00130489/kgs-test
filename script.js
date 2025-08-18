@@ -937,6 +937,8 @@ function watchAwards(){
     celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
     const ans = sequence[idx] && sequence[idx].answer ? sequence[idx].answer : '';
     if (!spectatorUntilNext) {
+  // 正解フィードバック（◯オーバーレイ）を表示
+  try { showFeedback(true); } catch(_) {}
       qTimerEl.textContent = '正解：' + ans;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
