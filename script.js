@@ -295,7 +295,7 @@ async function rejoinWithSession(s){
     // 監視開始
     watchPlayers(); watchScores(); watchWrongs();
     watchSettings(); watchSequence(); watchIndex();
-    watchEvents(); watchBuzz(); watchPreStart();
+    watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
     showToast('再参加しました', null, null, 2000);
   } catch(e) {
     showToast('再参加に失敗しました', null, null, 2500);
@@ -875,36 +875,8 @@ function watchEvents(){
   const ev = snap.val(); if(ev.timestamp <= joinTs) return;
   if (spectatorUntilNext) return; // 観戦モード中は進行・UI更新を行わない
     if(ev.correct){
-      if (handledCorrectFor.has(ev.questionIndex)) return;
-      handledCorrectFor.add(ev.questionIndex);
-      clearTimers(); answered = true; flowStarted = false;
-  revealFullQuestionAndStopSync();
-      statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      // Celebrate locally (slightly stronger if I'm the winner)
-      if (ev && ev.nick) {
-        const mine = (ev.nick === myNick);
-        celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
-      } else {
-        celebrateCorrect({});
-      }
-  // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
-  // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
-      qTimerEl.textContent = '正解：' + ev.answer;
-      qTimerEl.classList.add('show-answer');
-      qTimerEl.style.display = 'block';
-      aTimerEl.style.display = 'none';
-      nextBtn.disabled = false; updateBuzzState();
-      startNextBtnCountdown();
-      if (roomModeValue === 'select') {
-        Array.from(choiceArea.children).forEach(b => {
-          if (b.dataset.isAnswer === '1') {
-            b.classList.add('btn-danger');
-          } else {
-            b.classList.add('disabled-btn');
-          }
-          b.disabled = true;
-        });
-      }
+      // 正解確定は awards を唯一のソースにするため、events.correct ではUI確定しない
+      return;
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       // 誤答 / 回答時間切れ: 問題再開。元の questionStart は維持し残り時間補正
       clearTimers();
@@ -945,6 +917,50 @@ function watchEvents(){
       pausedRemainingQTime = null; // 再開後クリア
   updateBuzzState();
     }
+  });
+  unsubs.push(off);
+}
+
+// 正解確定ウォッチャ（awards/{idx} が書かれたら一着確定としてUI反映）
+function watchAwards(){
+  const off = onValue(ref(db,`rooms/${roomId}/awards`), snap => {
+    const awardsObj = snap.val() || {};
+    const aw = awardsObj[idx];
+    if (!aw) return;
+    if (handledCorrectFor.has(idx)) return;
+    handledCorrectFor.add(idx);
+    clearTimers(); answered = true; flowStarted = false;
+    revealFullQuestionAndStopSync();
+    const winner = aw.nick || '誰か';
+    statusEl.textContent = `${winner} さんが正解！🎉`;
+    const mine = (winner === myNick);
+    celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
+    const ans = sequence[idx] && sequence[idx].answer ? sequence[idx].answer : '';
+    if (!spectatorUntilNext) {
+      qTimerEl.textContent = '正解：' + ans;
+      qTimerEl.classList.add('show-answer');
+      qTimerEl.style.display = 'block';
+    } else {
+      qTimerEl.textContent = '';
+      qTimerEl.style.display = 'none';
+      setStatus('');
+    }
+    aTimerEl.style.display = 'none';
+    nextBtn.disabled = false; updateBuzzState();
+    startNextBtnCountdown();
+    // 選択モードなら正解を赤、他を無効化
+    if (roomModeValue === 'select') {
+      Array.from(choiceArea.children).forEach(b => {
+        if (b.dataset.isAnswer === '1') {
+          b.classList.add('btn-danger');
+        } else {
+          b.classList.add('disabled-btn');
+        }
+        b.disabled = true;
+      });
+    }
+    // 早押し状態は解除
+    try { remove(ref(db, `rooms/${roomId}/buzz`)); } catch(_) {}
   });
   unsubs.push(off);
 }
@@ -1141,7 +1157,7 @@ createBtn.addEventListener('click',async()=>{
   }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
-  watchEvents(); watchBuzz(); watchPreStart();
+  watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
 });
 
 // ルーム参加
@@ -1255,8 +1271,8 @@ joinRoomBtn.addEventListener('click',async()=>{
       choiceArea.classList.add('hidden');
     }
   watchPlayers(); watchScores(); watchWrongs();
-    watchSettings(); watchSequence(); watchIndex();
-    watchEvents(); watchBuzz(); watchPreStart();
+  watchSettings(); watchSequence(); watchIndex();
+  watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
   saveSession();
   showToast(`ルーム ${roomId} に参加しました`, null, null, 2000);
   } catch (err) {
@@ -1812,14 +1828,16 @@ async function showResults(){
   clearTimers();
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   // 最新プレイヤー/スコア/イベントを取得（途中参加対策でリアルタイム蓄積に依存しない）
-  const [ps, sc, evSnap] = await Promise.all([
+  const [ps, sc, evSnap, awSnap] = await Promise.all([
     get(ref(db,`rooms/${roomId}/players`)),
     get(ref(db,`rooms/${roomId}/scores`)),
-    get(ref(db,`rooms/${roomId}/events`))
+    get(ref(db,`rooms/${roomId}/events`)),
+    get(ref(db,`rooms/${roomId}/awards`))
   ]);
   players = ps.val() || {};
   const eventsObj = evSnap.val() || {};
   const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
+  const awardsObj = awSnap.val() || {};
   // 最終結果の正解数は DB の scores を参照
   scores = sc.val() || {};
   const scoreValues = Object.values(scores).map(v => v || 0);
@@ -1844,8 +1862,9 @@ async function showResults(){
   sequence.forEach((q, i) => {
     html += `<div class="result-question-card"><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
     const qEvents = eventsArr.filter(e => Number(e.questionIndex) === i);
-    const win = qEvents.filter(e=>e.correct).map(e=>e.nick);
-    html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
+    const award = awardsObj[i];
+    const winner = award && award.nick ? award.nick : null;
+    html += `<li>${TEXT.labels.correctLabel}${winner ? winner : 'なし'}</li>`;
     qEvents.filter(e=>!e.correct).forEach(e=>{
       let disp='';
       if (e.guess === '' && e.type === 'wrongGuess') disp = '空欄';
