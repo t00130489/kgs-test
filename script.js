@@ -1502,20 +1502,15 @@ function showQuestion(){
               get(selectRef).then(snap => {
                 const selectData = snap.val();
                 const who = selectData && selectData.nick ? selectData.nick : '他のプレイヤー';
-                if (who === myNick) {
-                  statusEl.textContent = `正解！🎉`;
-          showFeedback(true);
-          celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
-                } else {
-                  statusEl.textContent = `${who} さんが先に押しました…`;
-                }
+                // ここでは正解演出を行わず、awards確定を待つ
+                statusEl.textContent = (who === myNick)
+                  ? `判定済み…`
+                  : `${who} さんが先に押しました…`;
                 Array.from(choiceArea.children).forEach(b => b.disabled = true);
               });
             } else {
-              // 一着で正解
-              statusEl.textContent = `正解！🎉`;
-        showFeedback(true);
-        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
+              // 一着確保: ここでは演出せずawardsを待つ
+              statusEl.textContent = `判定中…`;
               Array.from(choiceArea.children).forEach(b => b.disabled = true);
               await push(ref(db, `rooms/${roomId}/events`), {
                 nick: myNick,
@@ -1717,29 +1712,13 @@ async function submitAnswer() {
   await push(ref(db, `rooms/${roomId}/events`), ev);
 
   if (isCorrect) {
-    // 正解処理（スコア加算はwatchEventsで行う）
-    clearTimers();
-    answered = true;
-    flowStarted = false;
-    pausedRemainingQTime = null;
-  revealFullQuestionAndStopSync();
-  celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
-    if (!spectatorUntilNext) {
-      qTimerEl.textContent = '正解：' + corr;
-      qTimerEl.style.display = 'block';
-    } else {
-      qTimerEl.textContent = '';
-      qTimerEl.style.display = 'none';
-      setStatus('');
-    }
-    buzzBtn.disabled = true;
-    answerArea.classList.add('hidden');
-    aTimerEl.style.display = 'none';
-    nextBtn.disabled = false;
-
-    await remove(ref(db, `rooms/${roomId}/buzz`));
-    updateBuzzState();
-    startNextBtnCountdown();
+  // 正解はawardsの確定を待ってUI反映（ここでは演出しない）
+  try { clearInterval(window._aInt); } catch(_) {}
+  aTimerEl.style.display = 'none';
+  answerArea.classList.add('hidden');
+  // ステータスは控えめに判定中表示
+  statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
+  // buzzはawards確定時（watchAwards）で解除する
   } else {
     // 誤答処理
   // ローカル即時フラグで一瞬の再有効化を防ぐ
