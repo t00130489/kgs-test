@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>興学思想テスト早押しクイズバトル</title>
+  <title>興学思想 早押しクイズバトル</title>
   <!-- ESMでversionを読み込み、CSS/JSはクエリ付きで読み込む（document.write廃止） -->
   <!-- クリティカルCSS（FOUC対策のため最小限をインライン） -->
   <style>
@@ -39,6 +39,52 @@
     link.rel = 'stylesheet';
     link.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
     document.head.appendChild(link);
+
+    // Favicon setup: use icon-k.png and provide 32x32 / 16x16 variants
+    (function setupFavicon() {
+      try {
+        const baseHref = 'icon-k.png?v=' + encodeURIComponent(APP_VERSION);
+        // Fallback any-size icon
+        const anyIcon = document.createElement('link');
+        anyIcon.rel = 'icon';
+        anyIcon.type = 'image/png';
+        anyIcon.sizes = 'any';
+        anyIcon.href = baseHref;
+        document.head.appendChild(anyIcon);
+
+        // Also set shortcut icon for older browsers
+        const shortcut = document.createElement('link');
+        shortcut.rel = 'shortcut icon';
+        shortcut.type = 'image/png';
+        shortcut.href = baseHref;
+        document.head.appendChild(shortcut);
+
+        // Generate 32x32 and 16x16 via canvas for crisper results
+        const sizes = [32, 16];
+        sizes.forEach(sz => {
+          const img = new Image();
+          img.decoding = 'async';
+          img.src = baseHref;
+          img.onload = () => {
+            try {
+              const c = document.createElement('canvas');
+              c.width = sz; c.height = sz;
+              const ctx = c.getContext('2d');
+              ctx.clearRect(0,0,sz,sz);
+              // draw scaled
+              ctx.drawImage(img, 0, 0, sz, sz);
+              const url = c.toDataURL('image/png');
+              const l = document.createElement('link');
+              l.rel = 'icon';
+              l.type = 'image/png';
+              l.sizes = sz + 'x' + sz;
+              l.href = url;
+              document.head.appendChild(l);
+            } catch(_) {}
+          };
+        });
+      } catch(_) {}
+    })();
 
     // バージョンラベル描画（DOM構築後）
     window.addEventListener('DOMContentLoaded', () => {
