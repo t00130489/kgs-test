@@ -376,21 +376,60 @@ function showNicknameModal() {
     modal.style.display = 'flex';
     input.value = '';
     okBtn.disabled = true;
-    setTimeout(() => {
-      input.focus();
-      // スマホで中央にスクロール
+    // iOS対策：ユーザー操作の文脈で一度不可視inputへフォーカスしてキーボードを開き、すぐに実入力へ移譲
+    (function focusNicknameField(){
+      try {
+        if (typeof isIOS === 'function' && isIOS()) {
+          // 既存プロキシがあれば破棄
+          if (window.focusProxyInput) {
+            try { window.focusProxyInput.blur(); } catch(_) {}
+            if (window.focusProxyInput.parentNode) window.focusProxyInput.parentNode.removeChild(window.focusProxyInput);
+            window.focusProxyInput = null;
+          }
+          const proxy = document.createElement('input');
+          proxy.type = 'text';
+          proxy.autocapitalize = 'none';
+          proxy.autocomplete = 'off';
+          proxy.spellcheck = false;
+          proxy.style.position = 'fixed';
+          proxy.style.opacity = '0';
+          proxy.style.pointerEvents = 'none';
+          proxy.style.zIndex = '-1';
+          proxy.style.left = '0';
+          proxy.style.bottom = '0';
+          proxy.style.width = '1px';
+          proxy.style.height = '1px';
+          document.body.appendChild(proxy);
+          proxy.focus();
+          window.focusProxyInput = proxy;
+          // すぐに本来の入力へフォーカス移譲
+          input.focus();
+          try { input.setSelectionRange(0, 0); } catch(_) {}
+          // 保険として少し遅延しても再フォーカス
+          setTimeout(() => { try { input.focus(); } catch(_) {} }, 0);
+        } else {
+          // 非iOSは通常フォーカス
+          input.focus();
+        }
+      } catch(_) {}
       if (window.innerWidth <= 600) {
         setTimeout(() => {
-          input.scrollIntoView({behavior:'smooth', block:'center'});
-        }, 300);
+          try { input.scrollIntoView({behavior:'smooth', block:'center'}); } catch(_) {}
+        }, 150);
       }
-    }, 50);
+    })();
     function close(val) {
       modal.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       input.removeEventListener('keydown', onKey);
       input.removeEventListener('input', onInput);
+      // iOS用のフォーカスプロキシを破棄
+      if (window.focusProxyInput) {
+        try { window.focusProxyInput.blur(); } catch(_) {}
+        if (window.focusProxyInput.parentNode) window.focusProxyInput.parentNode.removeChild(window.focusProxyInput);
+        window.focusProxyInput = null;
+      }
       resolve(val);
     }
     function onOk() {
