@@ -334,7 +334,7 @@ const choiceArea  = document.getElementById('choice-area');
 // ホスト用キャプション
 const hostCaption = document.createElement('div');
 hostCaption.id = 'host-caption';
-hostCaption.textContent = '参加者が揃ったら問題スタート！';
+hostCaption.textContent = '参加者が揃ったら問題スタート！（一人でもOK！）';
 hostCaption.style = 'color:#222; font-size:0.95rem; margin-top:1.2rem; margin-bottom:1.2rem; text-align:center; display:block;';
 
 // ホスト用キャプションとボタンを縦並び中央揃えでラップするdiv
@@ -345,7 +345,7 @@ hostWrap.style = 'display:flex; flex-direction:column; align-items:center; width
 // 参加者用キャプション
 const waitCaption = document.createElement('div');
 waitCaption.id = 'wait-caption';
-waitCaption.textContent = 'ルームホストが問題をスタートするのを待っています...';
+waitCaption.textContent = '主催者が問題をスタートするのを待っています...';
 waitCaption.style = 'color:#222; font-size:0.95rem; margin-bottom:12rem; text-align:center;';
 
 // ニックネーム入力モーダル生成
@@ -612,6 +612,8 @@ let spectatorUntilNext = false;
 let preStartSkipTs = null; // スキップ対象の preStart タイムスタンプ
 // 現在の問題の preStart タイムスタンプ（全員誤答判定で観戦者を除外するために使用）
 let currentPreStartTs = null;
+// sequence件数が要求より少ない場合のトーストを一度だけ出すためのフラグ
+let notifiedReducedCount = false;
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -848,7 +850,19 @@ function watchSettings(){
   unsubs.push(off);
 }
 function watchSequence(){
-  const off = onValue(ref(db,`rooms/${roomId}/sequence`), snap=>{ sequence = Object.values(snap.val()||{}).filter(x=>x); });
+  const off = onValue(ref(db,`rooms/${roomId}/sequence`), snap=>{
+    sequence = Object.values(snap.val()||{}).filter(x=>x);
+    // 実際の合計件数をUIへ反映（settings.countより優先）
+    try { if (totalNum) totalNum.textContent = sequence.length; } catch(_) {}
+    // 作成時に要求数 > 実数 の場合は一度だけ通知
+    try {
+      const req = settingsCache && typeof settingsCache.count === 'number' ? settingsCache.count : null;
+      if (!notifiedReducedCount && typeof req === 'number' && sequence.length < req) {
+        showToast(`選択範囲には ${sequence.length} 問しかありませんでした。${sequence.length} 問で進行します。`, null, null, 4500);
+        notifiedReducedCount = true;
+      }
+    } catch(_) {}
+  });
   unsubs.push(off);
 }
 function watchIndex(){
@@ -1106,6 +1120,7 @@ createBtn.addEventListener('click',async()=>{
   showLoading('ルームを作成中...');
   createBtn.disabled = true;
   try {
+    // 先に暫定の設定（要求件数で）を書き込む
     await set(ref(db,`rooms/${roomId}/settings`),{chapters:chs,count:cnt,mode:mode,createdAt:getServerTime(),host:nick});
     // Cloud Functionsでシーケンス生成（章フィルタ＋件数＋選択モード）
     try {
@@ -1137,8 +1152,16 @@ createBtn.addEventListener('click',async()=>{
       }
       sequence = pool.slice(0,cnt);
     }
+    // 実際に用意できた件数
+    const actualCount = Array.isArray(sequence) ? sequence.length : 0;
+    // 不足している場合はホストに通知
+    if (actualCount < cnt) {
+      try { showToast(`選択範囲には ${actualCount} 問しかありませんでした。${actualCount} 問で進行します。`, null, null, 4500); } catch(_) {}
+    }
     await set(ref(db,`rooms/${roomId}/sequence`),sequence);
     await set(ref(db,`rooms/${roomId}/currentIndex`),0);
+    // settings.count を実際の件数で上書き（UI整合性のため）
+    try { await update(ref(db,`rooms/${roomId}/settings`), { count: actualCount }); } catch(_) {}
     const playerRef = ref(db,`rooms/${roomId}/players/${myNick}`);
     await set(playerRef,{joinedAt:joinTs,lastActive:getServerTime()});
     // scores はサーバのみが更新（UI側では未定義を0扱い）
