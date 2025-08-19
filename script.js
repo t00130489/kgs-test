@@ -614,6 +614,16 @@ let preStartSkipTs = null; // スキップ対象の preStart タイムスタン�
 let currentPreStartTs = null;
 // sequence件数が要求より少ない場合のトーストを一度だけ出すためのフラグ
 let notifiedReducedCount = false;
+// iOS用：ユーザー操作のコンテキストでキーボードを開いておくためのフォーカスプロキシ
+let focusProxyInput = null;
+function isIOS(){
+  try {
+    const ua = navigator.userAgent || '';
+    const isIdevice = /iPhone|iPad|iPod/i.test(ua);
+    const isMacTouch = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    return isIdevice || isMacTouch;
+  } catch(_) { return false; }
+}
 
 // タイマー＆タイプクリア
 function clearTimers(){
@@ -1012,19 +1022,41 @@ function watchBuzz(){
   pausedRemainingQTime = remainingQTime; // 中断時の残り時間を記録 (float 秒)
       if(b.nick===myNick){
         answerArea.classList.remove('hidden'); answerBtn.disabled=false; startAnswerTimer();
-        // フォーカスしてIME（日本語キーボード）を確実に起動
-        setTimeout(() => {
-          try { answerInput.focus(); } catch(_) {}
+        // 回答欄が表示されたタイミングでフォーカス（iOS対策あり）
+        const doFocus = () => {
+          try {
+            // 先に既存プロキシがあれば破棄
+            if (focusProxyInput) {
+              try { focusProxyInput.blur(); } catch(_) {}
+              if (focusProxyInput.parentNode) focusProxyInput.parentNode.removeChild(focusProxyInput);
+              focusProxyInput = null;
+            }
+            answerInput.focus();
+            // iOSでキーボードを確実に出すため、選択範囲の設定を試みる
+            try { const len = answerInput.value.length; answerInput.setSelectionRange(len, len); } catch(_){}
+          } catch(_) {}
           if (window.innerWidth <= 600) {
             setTimeout(() => { try { answerInput.scrollIntoView({behavior:'smooth', block:'center'}); } catch(_) {} }, 150);
           }
-        }, 0);
+        };
+        // レイアウト反映後に実行
+        if (isIOS()) {
+          requestAnimationFrame(() => setTimeout(doFocus, 0));
+        } else {
+          setTimeout(doFocus, 0);
+        }
       }
       updateBuzzState();
     } else if(!b && flowStarted && !answered){
       // コメントは消さず、他UIのみリセット
       answerArea.classList.add('hidden');
       answerInput.value=''; answerBtn.disabled=true; updateBuzzState();
+      // 自分が先着でなかった場合は、iOSのキーボードを閉じるためにプロキシを破棄
+      if (focusProxyInput) {
+        try { focusProxyInput.blur(); } catch(_) {}
+        if (focusProxyInput.parentNode) focusProxyInput.parentNode.removeChild(focusProxyInput);
+        focusProxyInput = null;
+      }
     }
   });
   unsubs.push(off);
@@ -1676,6 +1708,35 @@ buzzBtn.addEventListener('click', async (e) => {
   if (!canBuzz()) return;
   createRipple(e);
   if (window.navigator.vibrate) window.navigator.vibrate(50);
+  // iOS: ユーザー操作中に不可視の入力へフォーカスしてキーボードを開いておく
+  if (isIOS() && roomModeValue === 'input' && !focusProxyInput) {
+    try {
+      const proxy = document.createElement('input');
+      proxy.type = 'text';
+      proxy.autocapitalize = 'none';
+      proxy.autocomplete = 'off';
+      proxy.spellcheck = false;
+      proxy.style.position = 'fixed';
+      proxy.style.opacity = '0';
+      proxy.style.pointerEvents = 'none';
+      proxy.style.zIndex = '-1';
+      proxy.style.left = '0';
+      proxy.style.bottom = '0';
+      proxy.style.width = '1px';
+      proxy.style.height = '1px';
+      document.body.appendChild(proxy);
+      proxy.focus();
+      focusProxyInput = proxy;
+      // 念のため一定時間後に自動破棄（保険）
+      setTimeout(() => {
+        if (focusProxyInput === proxy) {
+          try { proxy.blur(); } catch(_) {}
+          if (proxy.parentNode) proxy.parentNode.removeChild(proxy);
+          focusProxyInput = null;
+        }
+      }, 8000);
+    } catch(_) {}
+  }
   clearInterval(window._qInt);
   pauseTypewriter();
   pausedRemainingQTime = remainingQTime;
@@ -1699,13 +1760,14 @@ buzzBtn.addEventListener('click', async (e) => {
       answerInput.value = '';
       answered = false;
   // ここでは再開しない。他参加者同様、サーバからのwrongGuess/answerTimeoutイベントで再開を待つ
+      // iOSの一時フォーカスを解除し、キーボードを閉じる
+      if (focusProxyInput) {
+        try { focusProxyInput.blur(); } catch(_) {}
+        if (focusProxyInput.parentNode) focusProxyInput.parentNode.removeChild(focusProxyInput);
+        focusProxyInput = null;
+      }
     } else {
-      setTimeout(() => {
-        if (document.activeElement !== answerInput) answerInput.focus();
-        if (window.innerWidth <= 600) {
-          setTimeout(() => { answerInput.scrollIntoView({behavior:'smooth', block:'center'}); }, 300);
-        }
-      }, 100);
+      // フォーカスは watchBuzz 側（回答欄が表示された直後）で行う
     }
   });
 });
