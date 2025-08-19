@@ -295,7 +295,7 @@ async function rejoinWithSession(s){
     // 監視開始
     watchPlayers(); watchScores(); watchWrongs();
     watchSettings(); watchSequence(); watchIndex();
-    watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
+    watchEvents(); watchBuzz(); watchPreStart();
     showToast('再参加しました', null, null, 2000);
   } catch(e) {
     showToast('再参加に失敗しました', null, null, 2500);
@@ -572,8 +572,19 @@ function showFeedback(isCorrect) {
   }, 700);
 }
 
+// ハプティクスのみ発火（オーバーレイは表示しない）
+function triggerHaptic(isCorrect) {
+  try {
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(isCorrect ? [30, 30, 30] : [80, 40, 80]);
+    }
+  } catch(_) {}
+}
+
 // 状態変数
 let quizData = [], sequence = [], idx = 0;
+// 解決済み（正解/時間切れ/全員誤答）になった問題のインデックス
+let resolvedIndex = null;
 let myNick = '', roomId = '', joinTs = 0;
 let players = {}, scores = {}, wrongs = {};
 let settingsCache = {};
@@ -586,6 +597,8 @@ let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
 let roomModeValue = 'input';
 let handledCorrectFor = new Set();
+// 勝者の紙吹雪/+1 を重複表示しないためのフラグ
+let didLocalWinCelebrate = false;
 // 自分がこの問題で誤答（または解答時間切れ）したかどうかのローカルフラグ
 // DBの反映前でも自分だけは早押しボタンを再有効化しないために使用
 let iAmWrongLocal = false;
@@ -681,6 +694,8 @@ function onQuestionTimeout(){
   clearTimers();
   answered = true;
   flowStarted = false;
+  // 解決済みとしてマーキング（next の二重進行防止用）
+  resolvedIndex = idx;
   revealFullQuestionAndStopSync();
   if (!spectatorUntilNext) {
     qTimerEl.textContent = '正解：' + sequence[idx].answer;
@@ -774,8 +789,8 @@ function watchScores(){
 function watchWrongs(){
   const off = onValue(ref(db,`rooms/${roomId}/wrongAnswers`), snap=>{
     wrongs = snap.val()||{};
-  // 観戦モード中はUI更新を行わない（解答表示・ステータス非表示）
-  if (spectatorUntilNext) { updateBuzzState(); return; }
+    // 観戦モード中はUI更新を行わない（解答表示・ステータス非表示）
+    if (spectatorUntilNext) { updateBuzzState(); return; }
     // 観戦者除外: 現在の問題開始時点（currentPreStartTs）以前に参加したプレイヤーのみを対象
     let totalActive;
     if (currentPreStartTs && typeof currentPreStartTs === 'number') {
@@ -786,6 +801,8 @@ function watchWrongs(){
     if(!answered && Object.keys(wrongs).length >= totalActive && totalActive > 0){
       clearTimers(); answered = true; flowStarted = false;
       revealFullQuestionAndStopSync();
+      // 解決済みとしてマーキング
+      resolvedIndex = idx;
       if (!spectatorUntilNext) {
         qTimerEl.textContent = '正解：' + sequence[idx].answer;
         qTimerEl.classList.add('show-answer');
@@ -841,10 +858,13 @@ function watchIndex(){
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
     // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
-  answered = false;
-  flowStarted = false;
+    answered = false;
+    flowStarted = false;
     handledCorrectFor.clear();
-  clearTimers();
+    clearTimers();
+  didLocalWinCelebrate = false;
+    // 新問開始で解決インデックスをリセット
+    resolvedIndex = null;
     // 新しい問題に入ったらローカル誤答フラグを解除
     iAmWrongLocal = false;
     // 選択モードでは即座に旧選択肢を消しておく（カウントダウン中に表示残りを防止）
@@ -872,17 +892,64 @@ function watchIndex(){
 }
 function watchEvents(){
   const off = onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
-  const ev = snap.val(); if(ev.timestamp <= joinTs) return;
-  if (spectatorUntilNext) return; // 観戦モード中は進行・UI更新を行わない
+    const ev = snap.val(); if(ev.timestamp <= joinTs) return;
+    if (spectatorUntilNext) return; // 観戦モード中は進行・UI更新を行わない
     if(ev.correct){
-      // 正解確定は awards を唯一のソースにするため、events.correct ではUI確定しない
-      return;
+      if (handledCorrectFor.has(ev.questionIndex)) return;
+      handledCorrectFor.add(ev.questionIndex);
+      clearTimers(); answered = true; flowStarted = false;
+      revealFullQuestionAndStopSync();
+      // 解決済みとしてマーキング
+      resolvedIndex = idx;
+      statusEl.textContent = `${ev.nick} さんが正解！🎉`;
+      // 正解演出（モード別）
+      if (roomModeValue === 'input') {
+        // 入力モード: 全員に丸印＋ハプティクス
+        showFeedback(true);
+      } else {
+        // 選択モード: 全員にハプティクス、丸印は勝者のみ
+        triggerHaptic(true);
+        if (ev.nick === myNick) {
+          showFeedback(true);
+        }
+      }
+      // 勝者のみ紙吹雪/+1（重複防止）
+      if (ev.nick === myNick && !didLocalWinCelebrate) {
+        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
+        didLocalWinCelebrate = true;
+      }
+      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
+      // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
+      qTimerEl.textContent = '正解：' + ev.answer;
+      qTimerEl.classList.add('show-answer');
+      qTimerEl.style.display = 'block';
+      aTimerEl.style.display = 'none';
+      nextBtn.disabled = false; updateBuzzState();
+      startNextBtnCountdown();
+      if (roomModeValue === 'select') {
+        Array.from(choiceArea.children).forEach(b => {
+          if (b.dataset.isAnswer === '1') {
+            b.classList.add('btn-danger');
+          } else {
+            b.classList.add('disabled-btn');
+          }
+          b.disabled = true;
+        });
+      }
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       // 誤答 / 回答時間切れ: 問題再開。元の questionStart は維持し残り時間補正
       clearTimers();
-  let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
-  if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
-  statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
+      if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
+      statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      // 誤答演出（モード別）
+      if (roomModeValue === 'input') {
+        // 入力モード: 全員に×印＋ハプティクス
+        showFeedback(false);
+      } else {
+        // 選択モード: 本人のみ
+        if (ev.nick === myNick) showFeedback(false);
+      }
       // 自分の誤答/時間切れなら、ローカルでも即時に誤答フラグON（再有効化を防ぐ）
       if (ev.nick === myNick) {
         iAmWrongLocal = true;
@@ -910,59 +977,13 @@ function watchEvents(){
         typePos = questionEl.textContent.length;
         resumeTypewriter();
       }
-  lastDisplayedQSec = null; // 互換のため残すが未使用
-  lastDisplayedQTenth = null;
-  window._qInt = setInterval(tickQ,100);
-  tickQ();
+      lastDisplayedQSec = null; // 互換のため残すが未使用
+      lastDisplayedQTenth = null;
+      window._qInt = setInterval(tickQ,100);
+      tickQ();
       pausedRemainingQTime = null; // 再開後クリア
-  updateBuzzState();
+      updateBuzzState();
     }
-  });
-  unsubs.push(off);
-}
-
-// 正解確定ウォッチャ（awards/{idx} が書かれたら一着確定としてUI反映）
-function watchAwards(){
-  const off = onValue(ref(db,`rooms/${roomId}/awards`), snap => {
-    const awardsObj = snap.val() || {};
-    const aw = awardsObj[idx];
-    if (!aw) return;
-    if (handledCorrectFor.has(idx)) return;
-    handledCorrectFor.add(idx);
-    clearTimers(); answered = true; flowStarted = false;
-    revealFullQuestionAndStopSync();
-    const winner = aw.nick || '誰か';
-    statusEl.textContent = `${winner} さんが正解！🎉`;
-    const mine = (winner === myNick);
-    celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
-    const ans = sequence[idx] && sequence[idx].answer ? sequence[idx].answer : '';
-    if (!spectatorUntilNext) {
-  // 正解フィードバック（◯オーバーレイ）を表示
-  try { showFeedback(true); } catch(_) {}
-      qTimerEl.textContent = '正解：' + ans;
-      qTimerEl.classList.add('show-answer');
-      qTimerEl.style.display = 'block';
-    } else {
-      qTimerEl.textContent = '';
-      qTimerEl.style.display = 'none';
-      setStatus('');
-    }
-    aTimerEl.style.display = 'none';
-    nextBtn.disabled = false; updateBuzzState();
-    startNextBtnCountdown();
-    // 選択モードなら正解を赤、他を無効化
-    if (roomModeValue === 'select') {
-      Array.from(choiceArea.children).forEach(b => {
-        if (b.dataset.isAnswer === '1') {
-          b.classList.add('btn-danger');
-        } else {
-          b.classList.add('disabled-btn');
-        }
-        b.disabled = true;
-      });
-    }
-    // 早押し状態は解除
-    try { remove(ref(db, `rooms/${roomId}/buzz`)); } catch(_) {}
   });
   unsubs.push(off);
 }
@@ -1159,7 +1180,7 @@ createBtn.addEventListener('click',async()=>{
   }
   watchPlayers(); watchScores(); watchWrongs();
   watchSettings(); watchSequence(); watchIndex();
-  watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
+  watchEvents(); watchBuzz(); watchPreStart();
 });
 
 // ルーム参加
@@ -1273,8 +1294,8 @@ joinRoomBtn.addEventListener('click',async()=>{
       choiceArea.classList.add('hidden');
     }
   watchPlayers(); watchScores(); watchWrongs();
-  watchSettings(); watchSequence(); watchIndex();
-  watchEvents(); watchAwards(); watchBuzz(); watchPreStart();
+    watchSettings(); watchSequence(); watchIndex();
+    watchEvents(); watchBuzz(); watchPreStart();
   saveSession();
   showToast(`ルーム ${roomId} に参加しました`, null, null, 2000);
   } catch (err) {
@@ -1498,21 +1519,18 @@ function showQuestion(){
               return { nick: myNick, time: getServerTime() };
             }
             return;
-          }).then(async result => {
+          }, { applyLocally: false }).then(async result => {
             if (!result.committed) {
               // 先着あり
               get(selectRef).then(snap => {
                 const selectData = snap.val();
                 const who = selectData && selectData.nick ? selectData.nick : '他のプレイヤー';
-                // ここでは正解演出を行わず、awards確定を待つ
-                statusEl.textContent = (who === myNick)
-                  ? `判定済み…`
-                  : `${who} さんが先に押しました…`;
+                statusEl.textContent = `${who} さんが先に押しました…`;
                 Array.from(choiceArea.children).forEach(b => b.disabled = true);
               });
             } else {
-              // 一着確保: ここでは演出せずawardsを待つ
-              statusEl.textContent = `判定中…`;
+              // 一着で正解
+              statusEl.textContent = `正解！🎉`;
               Array.from(choiceArea.children).forEach(b => b.disabled = true);
               await push(ref(db, `rooms/${roomId}/events`), {
                 nick: myNick,
@@ -1531,7 +1549,6 @@ function showQuestion(){
           btn.classList.add('disabled-btn');
           btn.style.background = '#e0e0e0';
           btn.style.color = '#888';
-          showFeedback(false);
           Array.from(choiceArea.children).forEach(b => b.disabled = true);
           await push(ref(db, `rooms/${roomId}/events`), {
             nick: myNick,
@@ -1646,7 +1663,7 @@ buzzBtn.addEventListener('click', async (e) => {
       return { nick: myNick, time: getServerTime() };
     }
     return;
-  }).then(result => {
+  }, { applyLocally: false }).then(result => {
     if (!result.committed) {
       get(buzzRef).then(snap => {
         const buzzData = snap.val();
@@ -1698,8 +1715,10 @@ async function submitAnswer() {
   const corr = normalizeJa(sequence[idx].answer);
   const isCorrect = (guess === corr && guess !== '');
 
-  // フィードバック表示
-  showFeedback(isCorrect);
+  // 入力モード: 手元で即時フィードバック（全員表示はイベント経由でも行われる）
+  if (roomModeValue === 'input') {
+    showFeedback(isCorrect);
+  }
 
   // イベントオブジェクト作成
   const ev = {
@@ -1714,13 +1733,28 @@ async function submitAnswer() {
   await push(ref(db, `rooms/${roomId}/events`), ev);
 
   if (isCorrect) {
-  // 正解はawardsの確定を待ってUI反映（ここでは演出しない）
-  try { clearInterval(window._aInt); } catch(_) {}
-  aTimerEl.style.display = 'none';
-  answerArea.classList.add('hidden');
-  // ステータスは控えめに判定中表示
-  statusEl.textContent = `${myNick} さんが押しました（判定中…）`;
-  // buzzはawards確定時（watchAwards）で解除する
+    // 正解処理（スコア加算はwatchEventsで行う）
+    clearTimers();
+    answered = true;
+    flowStarted = false;
+    pausedRemainingQTime = null;
+  revealFullQuestionAndStopSync();
+    if (!spectatorUntilNext) {
+      qTimerEl.textContent = '正解：' + corr;
+      qTimerEl.style.display = 'block';
+    } else {
+      qTimerEl.textContent = '';
+      qTimerEl.style.display = 'none';
+      setStatus('');
+    }
+    buzzBtn.disabled = true;
+    answerArea.classList.add('hidden');
+    aTimerEl.style.display = 'none';
+    nextBtn.disabled = false;
+
+    await remove(ref(db, `rooms/${roomId}/buzz`));
+    updateBuzzState();
+    startNextBtnCountdown();
   } else {
     // 誤答処理
   // ローカル即時フラグで一瞬の再有効化を防ぐ
@@ -1787,8 +1821,21 @@ nextBtn.addEventListener('click', async () => {
     choiceArea.innerHTML = '';
   }
   if (idx + 1 < sequence.length) {
-    await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
-    await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
+    const curIdxRef = ref(db, `rooms/${roomId}/currentIndex`);
+    try {
+      const txn = await runTransaction(curIdxRef, current => {
+        if (typeof current === 'number') {
+          const expected = (resolvedIndex == null ? idx : resolvedIndex);
+          if (current === expected && current + 1 <= 999) {
+            return current + 1;
+          }
+        }
+        return; // 他端末が先に進めた等
+      }, { applyLocally: false });
+      if (txn.committed) {
+        await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
+      }
+    } catch(_) {}
   } else {
     showResults();
   }
@@ -1809,16 +1856,14 @@ async function showResults(){
   clearTimers();
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   // 最新プレイヤー/スコア/イベントを取得（途中参加対策でリアルタイム蓄積に依存しない）
-  const [ps, sc, evSnap, awSnap] = await Promise.all([
+  const [ps, sc, evSnap] = await Promise.all([
     get(ref(db,`rooms/${roomId}/players`)),
     get(ref(db,`rooms/${roomId}/scores`)),
-    get(ref(db,`rooms/${roomId}/events`)),
-    get(ref(db,`rooms/${roomId}/awards`))
+    get(ref(db,`rooms/${roomId}/events`))
   ]);
   players = ps.val() || {};
   const eventsObj = evSnap.val() || {};
   const eventsArr = Object.values(eventsObj).filter(Boolean).sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
-  const awardsObj = awSnap.val() || {};
   // 最終結果の正解数は DB の scores を参照
   scores = sc.val() || {};
   const scoreValues = Object.values(scores).map(v => v || 0);
@@ -1843,9 +1888,8 @@ async function showResults(){
   sequence.forEach((q, i) => {
     html += `<div class="result-question-card"><h4>第${i+1}問： ${q.question}</h4><p>正解： ${q.answer}</p><ul>`;
     const qEvents = eventsArr.filter(e => Number(e.questionIndex) === i);
-    const award = awardsObj[i];
-    const winner = award && award.nick ? award.nick : null;
-    html += `<li>${TEXT.labels.correctLabel}${winner ? winner : 'なし'}</li>`;
+    const win = qEvents.filter(e=>e.correct).map(e=>e.nick);
+    html += `<li>${TEXT.labels.correctLabel}${win.length ? win.join('、') : 'なし'}</li>`;
     qEvents.filter(e=>!e.correct).forEach(e=>{
       let disp='';
       if (e.guess === '' && e.type === 'wrongGuess') disp = '空欄';
