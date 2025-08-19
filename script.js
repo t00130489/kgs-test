@@ -572,8 +572,19 @@ function showFeedback(isCorrect) {
   }, 700);
 }
 
+// ハプティクスのみ発火（オーバーレイは表示しない）
+function triggerHaptic(isCorrect) {
+  try {
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(isCorrect ? [30, 30, 30] : [80, 40, 80]);
+    }
+  } catch(_) {}
+}
+
 // 状態変数
 let quizData = [], sequence = [], idx = 0;
+// 解決済み（正解/時間切れ/全員誤答）になった問題のインデックス
+let resolvedIndex = null;
 let myNick = '', roomId = '', joinTs = 0;
 let players = {}, scores = {}, wrongs = {};
 let settingsCache = {};
@@ -586,6 +597,8 @@ let nextBtnCountdownTimer = null;
 let nextBtnCountdownRemain = 0;
 let roomModeValue = 'input';
 let handledCorrectFor = new Set();
+// 勝者の紙吹雪/+1 を重複表示しないためのフラグ
+let didLocalWinCelebrate = false;
 // 自分がこの問題で誤答（または解答時間切れ）したかどうかのローカルフラグ
 // DBの反映前でも自分だけは早押しボタンを再有効化しないために使用
 let iAmWrongLocal = false;
@@ -681,6 +694,8 @@ function onQuestionTimeout(){
   clearTimers();
   answered = true;
   flowStarted = false;
+  // 解決済みとしてマーキング（next の二重進行防止用）
+  resolvedIndex = idx;
   revealFullQuestionAndStopSync();
   if (!spectatorUntilNext) {
     qTimerEl.textContent = '正解：' + sequence[idx].answer;
@@ -774,8 +789,8 @@ function watchScores(){
 function watchWrongs(){
   const off = onValue(ref(db,`rooms/${roomId}/wrongAnswers`), snap=>{
     wrongs = snap.val()||{};
-  // 観戦モード中はUI更新を行わない（解答表示・ステータス非表示）
-  if (spectatorUntilNext) { updateBuzzState(); return; }
+    // 観戦モード中はUI更新を行わない（解答表示・ステータス非表示）
+    if (spectatorUntilNext) { updateBuzzState(); return; }
     // 観戦者除外: 現在の問題開始時点（currentPreStartTs）以前に参加したプレイヤーのみを対象
     let totalActive;
     if (currentPreStartTs && typeof currentPreStartTs === 'number') {
@@ -786,6 +801,8 @@ function watchWrongs(){
     if(!answered && Object.keys(wrongs).length >= totalActive && totalActive > 0){
       clearTimers(); answered = true; flowStarted = false;
       revealFullQuestionAndStopSync();
+      // 解決済みとしてマーキング
+      resolvedIndex = idx;
       if (!spectatorUntilNext) {
         qTimerEl.textContent = '正解：' + sequence[idx].answer;
         qTimerEl.classList.add('show-answer');
@@ -841,10 +858,13 @@ function watchIndex(){
     nextBtn.textContent = idx+1>=sequence.length?TEXT.labels.finalResult:TEXT.labels.nextQuestion;
     set(ref(db,`rooms/${roomId}/wrongAnswers`),null);
     // ---- フラグ/状態リセット（全クライアントで新問開始時に同期） ----
-  answered = false;
-  flowStarted = false;
+    answered = false;
+    flowStarted = false;
     handledCorrectFor.clear();
-  clearTimers();
+    clearTimers();
+  didLocalWinCelebrate = false;
+    // 新問開始で解決インデックスをリセット
+    resolvedIndex = null;
     // 新しい問題に入ったらローカル誤答フラグを解除
     iAmWrongLocal = false;
     // 選択モードでは即座に旧選択肢を消しておく（カウントダウン中に表示残りを防止）
@@ -872,23 +892,34 @@ function watchIndex(){
 }
 function watchEvents(){
   const off = onChildAdded(ref(db,`rooms/${roomId}/events`), snap=>{
-  const ev = snap.val(); if(ev.timestamp <= joinTs) return;
-  if (spectatorUntilNext) return; // 観戦モード中は進行・UI更新を行わない
+    const ev = snap.val(); if(ev.timestamp <= joinTs) return;
+    if (spectatorUntilNext) return; // 観戦モード中は進行・UI更新を行わない
     if(ev.correct){
       if (handledCorrectFor.has(ev.questionIndex)) return;
       handledCorrectFor.add(ev.questionIndex);
       clearTimers(); answered = true; flowStarted = false;
-  revealFullQuestionAndStopSync();
+      revealFullQuestionAndStopSync();
+      // 解決済みとしてマーキング
+      resolvedIndex = idx;
       statusEl.textContent = `${ev.nick} さんが正解！🎉`;
-      // Celebrate locally (slightly stronger if I'm the winner)
-      if (ev && ev.nick) {
-        const mine = (ev.nick === myNick);
-        celebrateCorrect({ count: mine ? 140 : 100, pitch: mine ? 988 : 880, scoreText: mine ? '+1!' : '+1' });
+      // 正解演出（モード別）
+      if (roomModeValue === 'input') {
+        // 入力モード: 全員に丸印＋ハプティクス
+        showFeedback(true);
       } else {
-        celebrateCorrect({});
+        // 選択モード: 全員にハプティクス、丸印は勝者のみ
+        triggerHaptic(true);
+        if (ev.nick === myNick) {
+          showFeedback(true);
+        }
       }
-  // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
-  // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
+      // 勝者のみ紙吹雪/+1（重複防止）
+      if (ev.nick === myNick && !didLocalWinCelebrate) {
+        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
+        didLocalWinCelebrate = true;
+      }
+      // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
+      // ローカルでは加算せず、/scores の更新（watchScores）でUI同期する。
       qTimerEl.textContent = '正解：' + ev.answer;
       qTimerEl.classList.add('show-answer');
       qTimerEl.style.display = 'block';
@@ -908,9 +939,17 @@ function watchEvents(){
     } else if(ev.type==='wrongGuess' || ev.type==='answerTimeout'){
       // 誤答 / 回答時間切れ: 問題再開。元の questionStart は維持し残り時間補正
       clearTimers();
-  let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
-  if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
-  statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      let disp = ev.type==='wrongGuess'?ev.guess:'時間切れ';
+      if (ev.type==='wrongGuess' && (!disp || disp==='')) disp = '空欄';
+      statusEl.textContent = `${ev.nick} さんが不正解（${disp}）`;
+      // 誤答演出（モード別）
+      if (roomModeValue === 'input') {
+        // 入力モード: 全員に×印＋ハプティクス
+        showFeedback(false);
+      } else {
+        // 選択モード: 本人のみ
+        if (ev.nick === myNick) showFeedback(false);
+      }
       // 自分の誤答/時間切れなら、ローカルでも即時に誤答フラグON（再有効化を防ぐ）
       if (ev.nick === myNick) {
         iAmWrongLocal = true;
@@ -938,12 +977,12 @@ function watchEvents(){
         typePos = questionEl.textContent.length;
         resumeTypewriter();
       }
-  lastDisplayedQSec = null; // 互換のため残すが未使用
-  lastDisplayedQTenth = null;
-  window._qInt = setInterval(tickQ,100);
-  tickQ();
+      lastDisplayedQSec = null; // 互換のため残すが未使用
+      lastDisplayedQTenth = null;
+      window._qInt = setInterval(tickQ,100);
+      tickQ();
       pausedRemainingQTime = null; // 再開後クリア
-  updateBuzzState();
+      updateBuzzState();
     }
   });
   unsubs.push(off);
@@ -1480,26 +1519,18 @@ function showQuestion(){
               return { nick: myNick, time: getServerTime() };
             }
             return;
-          }).then(async result => {
+          }, { applyLocally: false }).then(async result => {
             if (!result.committed) {
               // 先着あり
               get(selectRef).then(snap => {
                 const selectData = snap.val();
                 const who = selectData && selectData.nick ? selectData.nick : '他のプレイヤー';
-                if (who === myNick) {
-                  statusEl.textContent = `正解！🎉`;
-          showFeedback(true);
-          celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
-                } else {
-                  statusEl.textContent = `${who} さんが先に押しました…`;
-                }
+                statusEl.textContent = `${who} さんが先に押しました…`;
                 Array.from(choiceArea.children).forEach(b => b.disabled = true);
               });
             } else {
               // 一着で正解
               statusEl.textContent = `正解！🎉`;
-        showFeedback(true);
-        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
               Array.from(choiceArea.children).forEach(b => b.disabled = true);
               await push(ref(db, `rooms/${roomId}/events`), {
                 nick: myNick,
@@ -1518,7 +1549,6 @@ function showQuestion(){
           btn.classList.add('disabled-btn');
           btn.style.background = '#e0e0e0';
           btn.style.color = '#888';
-          showFeedback(false);
           Array.from(choiceArea.children).forEach(b => b.disabled = true);
           await push(ref(db, `rooms/${roomId}/events`), {
             nick: myNick,
@@ -1633,7 +1663,7 @@ buzzBtn.addEventListener('click', async (e) => {
       return { nick: myNick, time: getServerTime() };
     }
     return;
-  }).then(result => {
+  }, { applyLocally: false }).then(result => {
     if (!result.committed) {
       get(buzzRef).then(snap => {
         const buzzData = snap.val();
@@ -1685,8 +1715,10 @@ async function submitAnswer() {
   const corr = normalizeJa(sequence[idx].answer);
   const isCorrect = (guess === corr && guess !== '');
 
-  // フィードバック表示
-  showFeedback(isCorrect);
+  // 入力モード: 手元で即時フィードバック（全員表示はイベント経由でも行われる）
+  if (roomModeValue === 'input') {
+    showFeedback(isCorrect);
+  }
 
   // イベントオブジェクト作成
   const ev = {
@@ -1707,7 +1739,6 @@ async function submitAnswer() {
     flowStarted = false;
     pausedRemainingQTime = null;
   revealFullQuestionAndStopSync();
-  celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
     if (!spectatorUntilNext) {
       qTimerEl.textContent = '正解：' + corr;
       qTimerEl.style.display = 'block';
@@ -1790,8 +1821,21 @@ nextBtn.addEventListener('click', async () => {
     choiceArea.innerHTML = '';
   }
   if (idx + 1 < sequence.length) {
-    await set(ref(db, `rooms/${roomId}/currentIndex`), idx + 1);
-    await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
+    const curIdxRef = ref(db, `rooms/${roomId}/currentIndex`);
+    try {
+      const txn = await runTransaction(curIdxRef, current => {
+        if (typeof current === 'number') {
+          const expected = (resolvedIndex == null ? idx : resolvedIndex);
+          if (current === expected && current + 1 <= 999) {
+            return current + 1;
+          }
+        }
+        return; // 他端末が先に進めた等
+      }, { applyLocally: false });
+      if (txn.committed) {
+        await set(ref(db, `rooms/${roomId}/settings/preStart`), getServerTime());
+      }
+    } catch(_) {}
   } else {
     showResults();
   }
