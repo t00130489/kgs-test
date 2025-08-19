@@ -1,7 +1,7 @@
 // Service Worker 改善 (#12): バージョン一元管理 + 柔軟な戦略
 // SW 自身の更新検知: 登録時の sw.js?v=APP_VERSION のクエリから SW_VERSION を取得
 // フォールバック（万一クエリ無の場合）は埋め込みの固定文字列
-const EMBEDDED_VERSION = '1m';
+const EMBEDDED_VERSION = '1m-1';
 const SW_VERSION = (() => {
   try { return new URL(self.location.href).searchParams.get('v') || EMBEDDED_VERSION; } catch(_) { return EMBEDDED_VERSION; }
 })();
