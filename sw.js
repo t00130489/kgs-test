@@ -1,14 +1,17 @@
 // Service Worker 改善 (#12): バージョン一元管理 + 柔軟な戦略
-// version.js が self スコープにあれば利用。無ければ埋め込みのフォールバック。
-const EMBEDDED_VERSION = '19m';
-const APP_VERSION = self.APP_VERSION || EMBEDDED_VERSION;
-const CACHE_NAME = `kgs-quiz-cache-v${APP_VERSION}`;
-// バージョン付き参照と素のパス双方をプリキャッシュ（HTML は network-first で常に更新されるので最低限）
+// SW 自身の更新検知: 登録時の sw.js?v=APP_VERSION のクエリから SW_VERSION を取得
+// フォールバック（万一クエリ無の場合）は埋め込みの固定文字列
+const EMBEDDED_VERSION = '1m';
+const SW_VERSION = (() => {
+  try { return new URL(self.location.href).searchParams.get('v') || EMBEDDED_VERSION; } catch(_) { return EMBEDDED_VERSION; }
+})();
+const CACHE_NAME = `kgs-quiz-cache-v${SW_VERSION}`;
+// バージョン付き参照と素のパス双方をプリキャッシュ（HTML は network-first なのでオフライン用に最低限）
 const PRECACHE_URLS = [
   '/',
   '/index.html',
-  `/style.css?v=${APP_VERSION}`,
-  `/script.js?v=${APP_VERSION}`,
+  `/style.css?v=${SW_VERSION}`,
+  `/script.js?v=${SW_VERSION}`,
   '/style.css',
   '/script.js',
   '/manifest.json',
@@ -30,6 +33,13 @@ self.addEventListener('activate', evt => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k))))
       .then(()=>self.clients.claim())
+      .then(async ()=>{
+        // 新しい SW が有効化されたら全クライアントへ通知し、一度だけ自動リロードを促す
+        try {
+          const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          clients.forEach(c => c.postMessage({ type: 'SW_ACTIVATED', version: SW_VERSION }));
+        } catch(_) {}
+      })
   );
 });
 
@@ -43,6 +53,19 @@ self.addEventListener('fetch', evt => {
   const url = new URL(evt.request.url);
   const isNavigate = evt.request.mode === 'navigate';
   const isAsset = /\.(?:css|js|png|jpg|jpeg|gif|webp|svg|ico)$/.test(url.pathname);
+
+  // version.js は常に network-first + no-store（確実に最新を取得）
+  if (url.pathname.endsWith('/version.js')) {
+    evt.respondWith((async () => {
+      try {
+        return await fetch(evt.request, { cache: 'no-store' });
+      } catch (e) {
+        const cached = await caches.match(evt.request);
+        return cached || new Response('Offline', { status: 503, statusText: 'Offline' });
+      }
+    })());
+    return;
+  }
 
   if (isNavigate) {
     // Network-first for HTML
