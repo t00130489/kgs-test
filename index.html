@@ -26,24 +26,34 @@
   .buzz-btn { background:#d32f2f; color:#fff; }
   </style>
   <script type="module">
-    import { APP_VERSION } from './version.js';
-    // グローバルにも載せて、バージョン表記や他スクリプトから参照可能に
-    window.APP_VERSION = APP_VERSION;
-  // 先にpreloadしてCSS取得を前倒し
-  const preload = document.createElement('link');
-  preload.rel = 'preload';
-  preload.as = 'style';
-  preload.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
-  document.head.appendChild(preload);
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
-    document.head.appendChild(link);
+    (async () => {
+      // version.js は毎回キャッシュバストして取得
+      const { APP_VERSION } = await import('./version.js?cb=' + Date.now());
+      // グローバルにも載せて、バージョン表記や他スクリプトから参照可能に
+      window.APP_VERSION = APP_VERSION;
+      // 先にpreloadしてCSS取得を前倒し
+      const preload = document.createElement('link');
+      preload.rel = 'preload';
+      preload.as = 'style';
+      preload.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
+      document.head.appendChild(preload);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
+      document.head.appendChild(link);
+      
+      // バージョンラベル描画（DOM構築後）
+      window.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('app-version-label');
+        if (el) el.textContent = 'v' + APP_VERSION;
+      });
+    })();
 
     // Favicon setup: use icon-k.png and provide 32x32 / 16x16 variants
-    (function setupFavicon() {
+  (function setupFavicon() {
       try {
-        const baseHref = 'icon-k.png?v=' + encodeURIComponent(APP_VERSION);
+    const v = (window.APP_VERSION || '0');
+    const baseHref = 'icon-k.png?v=' + encodeURIComponent(v);
         // Fallback any-size icon
         const anyIcon = document.createElement('link');
         anyIcon.rel = 'icon';
@@ -86,11 +96,6 @@
       } catch(_) {}
     })();
 
-    // バージョンラベル描画（DOM構築後）
-    window.addEventListener('DOMContentLoaded', () => {
-      const el = document.getElementById('app-version-label');
-      if (el) el.textContent = 'v' + APP_VERSION;
-    });
   </script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QEP0467K9D"></script>
@@ -106,11 +111,25 @@
   <meta name="theme-color" content="#1976d2">
   <link rel="apple-touch-icon" href="icon-192.png">
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js');
+    // SW はバージョン付き URL で登録し、activate 後に一度だけ自動リロード
+    (function(){
+      if (!('serviceWorker' in navigator)) return;
+      let reloadedForSW = false;
+      try { reloadedForSW = sessionStorage.getItem('reloadedForSW') === '1'; } catch(_) {}
+      navigator.serviceWorker.addEventListener('message', event => {
+        if (!event || !event.data || event.data.type !== 'SW_ACTIVATED') return;
+        if (reloadedForSW) return; // 一度だけ
+        try { sessionStorage.setItem('reloadedForSW', '1'); } catch(_) {}
+        // version.js, index.html は network-first なので、ここでのリロードで最新反映
+        location.reload();
       });
-    }
+      window.addEventListener('load', function() {
+        const v = (window.APP_VERSION || '0');
+        navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(v));
+        // 次回以降の更新のため、ロード完了後にフラグをクリア
+        try { sessionStorage.removeItem('reloadedForSW'); } catch(_) {}
+      });
+    })();
   </script>
 </head>
 <body>
@@ -234,11 +253,15 @@
   <!-- コンフェッティ用キャンバス -->
   <canvas id="confetti-canvas" class="confetti-canvas" aria-hidden="true"></canvas>
   <script type="module">
-    import { APP_VERSION } from './version.js';
-    const s = document.createElement('script');
-    s.type='module';
-    s.src = 'script.js?v=' + encodeURIComponent(APP_VERSION);
-    document.head.appendChild(s);
+    (async () => {
+      const { APP_VERSION } = await import('./version.js?cb=' + Date.now());
+      // APP_VERSION を window に反映（レース時の保険）
+      window.APP_VERSION = APP_VERSION;
+      const s = document.createElement('script');
+      s.type='module';
+      s.src = 'script.js?v=' + encodeURIComponent(APP_VERSION);
+      document.head.appendChild(s);
+    })();
   </script>
 </body>
 </html>
