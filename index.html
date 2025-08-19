@@ -42,11 +42,16 @@
       link.href = 'style.css?v=' + encodeURIComponent(APP_VERSION);
       document.head.appendChild(link);
       
-      // バージョンラベル描画（DOM構築後）
-      window.addEventListener('DOMContentLoaded', () => {
+      // バージョンラベル描画（DOMContentLoaded 済みでも確実に設定）
+      const setVersionLabel = () => {
         const el = document.getElementById('app-version-label');
         if (el) el.textContent = 'v' + APP_VERSION;
-      });
+      };
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', setVersionLabel);
+      } else {
+        setVersionLabel();
+      }
     })();
 
     // Favicon setup: use icon-k.png and provide 32x32 / 16x16 variants
