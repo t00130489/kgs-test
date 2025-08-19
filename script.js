@@ -978,7 +978,7 @@ function watchEvents(){
       }
       // 勝者のみ紙吹雪/+1（重複防止）
       if (ev.nick === myNick && !didLocalWinCelebrate) {
-        celebrateCorrect({ count: 140, pitch: 988, scoreText: '+1!' });
+        celebrateCorrect({ count: 140, pitch: 988, scoreText: '＋１！' });
         didLocalWinCelebrate = true;
       }
       // スコア加算はサーバ側 Cloud Function (onCorrectEvent) が一元管理する。
