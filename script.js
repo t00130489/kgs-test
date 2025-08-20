@@ -1946,13 +1946,14 @@ nextBtn.addEventListener('click', async () => {
   }
   if (idx + 1 < sequence.length) {
     const curIdxRef = ref(db, `rooms/${roomId}/currentIndex`);
+    // 重要: トランザクション内で外部の idx/resolvedIndex が変化すると
+    // 再試行時に expected も変化し、意図せず連続加算が発生し得る。
+    // そのため、クリック時点の期待値を固定値としてキャプチャする。
+    const fixedExpected = (resolvedIndex == null ? idx : resolvedIndex);
     try {
       const txn = await runTransaction(curIdxRef, current => {
-        if (typeof current === 'number') {
-          const expected = (resolvedIndex == null ? idx : resolvedIndex);
-          if (current === expected && current + 1 <= 999) {
-            return current + 1;
-          }
+        if (typeof current === 'number' && current === fixedExpected && current + 1 <= 999) {
+          return current + 1;
         }
         return; // 他端末が先に進めた等
       }, { applyLocally: false });
