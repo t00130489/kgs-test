@@ -5,14 +5,15 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>興学思想 早押しクイズバトル</title>
   <!-- ESMでversionを読み込み、CSS/JSはクエリ付きで読み込む（document.write廃止） -->
   <!-- クリティカルCSS（FOUC対策のため最小限をインライン） -->
   <style>
-    /* 最低限のレイアウトとフォントだけ指定（後続の style.css で上書き） */
-    html, body { margin: 0; padding: 0; height: 100%; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, Hiragino Kaku Gothic ProN, Meiryo, sans-serif; background:#f7f7fb; color:#222; }
+  /* 最低限のレイアウトとフォントだけ指定（後続の style.css で上書き） */
+  html, body { margin: 0; padding: 0; }
+  html { background:#f5f7fa; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, Hiragino Kaku Gothic ProN, Meiryo, sans-serif; background:#f5f7fa; color:#222; }
   /* header の背景色は指定しない（本来のデザインを維持） */
   header { text-align:center; padding: 0.7rem 0 0.4rem 0; }
     .main-title { display:flex; align-items:center; gap:8px; font-size: 1.2rem; margin:0; }
@@ -31,6 +32,16 @@
       const { APP_VERSION } = await import('./version.js?cb=' + Date.now());
       // グローバルにも載せて、バージョン表記や他スクリプトから参照可能に
       window.APP_VERSION = APP_VERSION;
+      // 実測ビューポート高をCSS変数に設定（ChromeやiPadの過剰スクロール対策）
+      const applyVH = () => {
+        try {
+          const vh = window.innerHeight * 0.01;
+          document.documentElement.style.setProperty('--vh', `${vh}px`);
+        } catch(_) {}
+      };
+      applyVH();
+      window.addEventListener('resize', applyVH);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') applyVH(); });
       // 先にpreloadしてCSS取得を前倒し
       const preload = document.createElement('link');
       preload.rel = 'preload';
@@ -113,7 +124,9 @@
   </script>
 
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#1976d2">
+  <meta name="theme-color" content="#f5f7fa">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="icon-192.png">
   <script>
     // SW はバージョン付き URL で登録し、activate 後に一度だけ自動リロード
@@ -217,7 +230,7 @@
         <span>出題範囲： <strong id="room-range" class="highlight"></strong></span><br>
         <span style="display:inline-flex; gap:2em; align-items:center;">
           <span id="room-mode-label">モード：<strong id="room-mode" class="highlight"></strong></span>
-          <span>問題数： <strong id="currentNum" class="highlight">0</strong>/<strong id="totalNum" class="highlight">0</strong></span>
+          <span>問題数： <strong id="currentNum" class="highlight">0</strong> / <strong id="totalNum" class="highlight">0</strong></span>
         </span>
       </div>
       <div class="start-row centered">
