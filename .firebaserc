@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "kgs-test-68924"
-  }
+  },
+  "targets": {
+    "kgs-test-68924": {
+      "hosting": {
+        "newkgstest": [
+          "kgs-test"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
