@@ -427,10 +427,6 @@
     // ログをクリア（Firestore の削除は管理者のみが関数経由で行う）
     clearBtn.addEventListener('click', () => {
       alert('ログの削除は管理者のみが実行できます');
-      return;
-        renderTable([]);
-        renderStats([]);
-      }
     });
 
     // ホームに戻る
@@ -439,9 +435,13 @@
     });
 
     // 初期表示
-    const logs = loadLogs();
-    renderTable(logs);
-    renderStats(logs);
+    async function init() {
+      const logs = await fetchLogs();
+      currentLogs = logs;
+      renderTable(logs);
+      renderStats(logs);
+    }
+    init();
   </script>
 </body>
 </html>

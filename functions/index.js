@@ -20,17 +20,56 @@ exports.scheduledCleanupRooms = onSchedule(
     const roomsRef = db.ref("rooms");
     const snap     = await roomsRef.once("value");
     const updates  = {};
+    const logPromises = [];
+    const firestore = admin.firestore();
 
     snap.forEach((roomSnap) => {
       const settings = roomSnap.child("settings").val();
       if (settings && settings.createdAt < cutoff) {
         // 2h 過ぎていれば削除対象
         updates[roomSnap.key] = null;
+
+        // finishedAtが存在しない（終了印がない）場合は途中終了とみなす
+        if (!settings.finishedAt) {
+          const roomData = roomSnap.val();
+          if (roomData) {
+            roomData.status = 'incomplete';
+            logPromises.push(firestore.collection('gameLogs').add(roomData));
+          }
+        }
       }
     });
 
+    if (logPromises.length > 0) {
+      await Promise.all(logPromises);
+    }
+
     if (Object.keys(updates).length) {
       await roomsRef.update(updates);
+    }
+  }
+);
+
+/**
+ * ゲーム終了時の保存処理
+ * rooms/{roomId}/settings/finishedAt が作成されたタイミングをトリガー
+ */
+exports.onRoomFinished = onValueCreated(
+  { ref: "/rooms/{roomId}/settings/finishedAt", instance: "kgs-test-68924-default-rtdb", region: "us-central1" },
+  async (event) => {
+    try {
+      const roomId = event.params.roomId;
+      const roomSnap = await db.ref(`rooms/${roomId}`).once("value");
+      const roomData = roomSnap.val();
+
+      if (!roomData) return;
+
+      roomData.status = 'finished';
+
+      const firestore = admin.firestore();
+      await firestore.collection('gameLogs').add(roomData);
+    } catch (e) {
+      console.error('onRoomFinished error', e);
     }
   }
 );
