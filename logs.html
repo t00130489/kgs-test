@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ゲームログ | KGS</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      color: #333;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      padding: 2rem;
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .header-controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+    }
+    .header-controls button {
+      padding: 0.6rem 1.2rem;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.3s;
+    }
+    .header-controls button:hover {
+      background: #764ba2;
+    }
+    .header-controls button.secondary {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .header-controls button.secondary:hover {
+      background: #d0d0d0;
+    }
+    .search-input {
+      padding: 0.6rem 1rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      width: 200px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-card h3 {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin-bottom: 0.5rem;
+    }
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: bold;
+    }
+    .logs-table-wrapper {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 2rem;
+    }
+    thead {
+      background: #f5f7fa;
+    }
+    th {
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #667eea;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    td {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    tr:hover {
+      background: #f9f9f9;
+    }
+    .room-id {
+      font-weight: 600;
+      color: #667eea;
+    }
+    .participants {
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .winner {
+      background: #fff8e1;
+      padding: 0.3rem 0.6rem;
+      border-radius: 4px;
+      font-weight: 600;
+      color: #f57c00;
+    }
+    .mode {
+      display: inline-block;
+      padding: 0.3rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .mode.input {
+      background: #c8e6c9;
+      color: #2e7d32;
+    }
+    .mode.select {
+      background: #bbdefb;
+      color: #1565c0;
+    }
+    .timestamp {
+      font-size: 0.85rem;
+      color: #999;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #999;
+    }
+    .empty-state h2 {
+      margin-bottom: 1rem;
+    }
+    .expand-btn {
+      background: none;
+      border: none;
+      color: #667eea;
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0;
+    }
+    .details-row {
+      display: none;
+    }
+    .details-row.show {
+      display: table-row;
+    }
+    .details-cell {
+      padding: 1rem;
+      background: #f9f9f9;
+    }
+    .details-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 768px) {
+      .details-content {
+        grid-template-columns: 1fr;
+      }
+      .container {
+        padding: 1rem;
+      }
+      .header-controls {
+        flex-direction: column;
+      }
+      .search-input {
+        width: 100%;
+      }
+      table {
+        font-size: 0.85rem;
+      }
+      th, td {
+        padding: 0.6rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 ゲームログ</h1>
+    
+    <div class="header-controls">
+      <input type="text" class="search-input" id="searchInput" placeholder="ルームID または プレイヤー名で検索">
+      <button class="secondary" id="exportBtn">📥 CSV エクスポート</button>
+      <button class="secondary" id="clearBtn">🗑️ ログをクリア</button>
+      <button id="backBtn">🏠 ホームに戻る</button>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="logs-table-wrapper">
+      <table id="logsTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>日時</th>
+            <th>ルームID</th>
+            <th>参加者</th>
+            <th>優勝者</th>
+            <th>正解数</th>
+            <th>問題数</th>
+            <th>形式</th>
+            <th>時間</th>
+          </tr>
+        </thead>
+        <tbody id="logsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="empty-state" id="emptyState">
+      <h2>ゲームログがまだ記録されていません</h2>
+      <p>ゲームをはじめてみましょう！</p>
+    </div>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const backBtn = document.getElementById('backBtn');
+    const statsDiv = document.getElementById('stats');
+    const logsTable = document.getElementById('logsTable');
+    const logsBody = document.getElementById('logsBody');
+    const emptyState = document.getElementById('emptyState');
+
+    // API からゲームログを取得
+    async function fetchLogs() {
+      try {
+        const response = await fetch('https://us-central1-kgs-test-68924.cloudfunctions.net/getGameLogs?limit=100');
+        if (!response.ok) throw new Error('Failed to fetch logs');
+        const data = await response.json();
+        return data.logs || [];
+      } catch (e) {
+        console.error('Error fetching logs:', e);
+        return [];
+      }
+    }
+
+    // テーブルを再描画
+    function renderTable(logs) {
+      logsBody.innerHTML = '';
+      
+      if (logs.length === 0) {
+        logsTable.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+      }
+
+      logsTable.style.display = 'table';
+      emptyState.style.display = 'none';
+
+      logs.forEach((log, index) => {
+        const date = new Date(log.finishedAt);
+        const timeStr = date.toLocaleString('ja-JP');
+        const durationMin = Math.floor(log.duration / 60000);
+        const winners = log.winners || [];
+        const maxScore = Math.max(...Object.values(log.scores || {}), 0);
+        const isIncomplete = log.status === 'incomplete';
+        const statusBadge = isIncomplete ? '<span style="background: #ffcccc; color: #c00; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">途中終了</span>' : '';
+
+        // メインの行
+        const mainRow = document.createElement('tr');
+        mainRow.innerHTML = `
+          <td><button class="expand-btn" data-index="${index}">▼</button></td>
+          <td class="timestamp">${timeStr}</td>
+          <td class="room-id">${log.roomId}</td>
+          <td class="participants">${log.participants?.join(', ') || '-'}</td>
+          <td><span class="winner">${isIncomplete ? '（途中終了）' : (winners.join(', ') || 'なし')}</span></td>
+          <td>${maxScore}</td>
+          <td>${isIncomplete ? `${log.currentQuestion || 0}/${log.questionsCount}` : log.questionsCount}</td>
+          <td><span class="mode ${log.mode}">${log.mode === 'select' ? '選択' : '入力'}</span></td>
+          <td>${durationMin}分 ${statusBadge}</td>
+        `;
+
+        // 詳細情報の行
+        const detailsRow = document.createElement('tr');
+        detailsRow.className = 'details-row';
+        detailsRow.innerHTML = `
+          <td colspan="9">
+            <div class="details-cell">
+              <div class="details-content">
+                <div>
+                  <h4>スコア内訳</h4>
+                  <ul style="list-style: none;">
+                    ${Object.entries(log.scores || {})
+                      .map(([nick, score]) => `<li>${nick}: ${score}問正解</li>`)
+                      .join('')}
+                  </ul>
+                </div>
+                <div>
+                  <h4>ゲーム情報</h4>
+                  <p><strong>範囲:</strong> ${log.chapters?.join(', ') || '-'}</p>
+                  <p><strong>進捗:</strong> ${isIncomplete ? `${log.currentQuestion || 0}/${log.questionsCount}問` : `${log.questionsCount}問中 ${maxScore}問正解`}</p>
+                  <p><strong>開始:</strong> ${new Date(log.createdAt).toLocaleString('ja-JP')}</p>
+                  <p><strong>ステータス:</strong> ${isIncomplete ? '<span style="color: #f57c00; font-weight: 600;">途中終了</span>' : '完了'}</p>
+                </div>
+              </div>
+            </div>
+          </td>
+        `;
+
+        logsBody.appendChild(mainRow);
+        logsBody.appendChild(detailsRow);
+
+        // 展開・折畳みイベント
+        mainRow.querySelector('.expand-btn').addEventListener('click', (e) => {
+          e.preventDefault();
+          detailsRow.classList.toggle('show');
+        });
+      });
+    }
+
+    // 統計情報を表示
+    function renderStats(logs) {
+      if (logs.length === 0) {
+        statsDiv.innerHTML = '';
+        return;
+      }
+
+      const totalGames = logs.length;
+      const totalPlayers = new Set();
+      const totalWinners = new Set();
+      let totalQuestions = 0;
+
+      logs.forEach(log => {
+        log.participants?.forEach(p => totalPlayers.add(p));
+        log.winners?.forEach(w => totalWinners.add(w));
+        totalQuestions += log.questionsCount || 0;
+      });
+
+      statsDiv.innerHTML = `
+        <div class="stat-card">
+          <h3>ゲーム数</h3>
+          <div class="value">${totalGames}</div>
+        </div>
+        <div class="stat-card">
+          <h3>参加者</h3>
+          <div class="value">${totalPlayers.size}</div>
+        </div>
+        <div class="stat-card">
+          <h3>優勝者</h3>
+          <div class="value">${totalWinners.size}</div>
+        </div>
+        <div class="stat-card">
+          <h3>総出題数</h3>
+          <div class="value">${totalQuestions}</div>
+        </div>
+      `;
+    }
+
+    // 検索フィルタ
+    function filterLogs(query, logs) {
+      if (!query) return logs;
+
+      const q = query.toLowerCase();
+      return logs.filter(log =>
+        log.roomId.toLowerCase().includes(q) ||
+        log.participants?.some(p => p.toLowerCase().includes(q)) ||
+        log.winners?.some(w => w.toLowerCase().includes(q))
+      );
+    }
+
+    // 検索イベント（非同期）
+    let currentLogs = [];
+    searchInput.addEventListener('input', (e) => {
+      const filtered = filterLogs(e.target.value, currentLogs);
+      renderTable(filtered);
+    });
+
+    // CSV エクスポート
+    exportBtn.addEventListener('click', () => {
+      if (currentLogs.length === 0) {
+        alert('エクスポートするログがありません');
+        return;
+      }
+
+      const headers = ['日時', 'ルームID', '参加者', '優勝者', '問題数', '形式', '時間(分)'];
+      const rows = currentLogs.map(log => {
+        const date = new Date(log.finishedAt).toLocaleString('ja-JP');
+        const durationMin = Math.floor(log.duration / 60000);
+        return [
+          date,
+          log.roomId,
+          log.participants?.join('; ') || '',
+          log.winners?.join('; ') || '',
+          log.questionsCount,
+          log.mode === 'select' ? '選択' : '入力',
+          durationMin
+        ];
+      });
+
+      const csv = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `game-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    });
+
+    // ログをクリア（Firestore の削除は管理者のみが関数経由で行う）
+    clearBtn.addEventListener('click', () => {
+      alert('ログの削除は管理者のみが実行できます');
+      return;
+        renderTable([]);
+        renderStats([]);
+      }
+    });
+
+    // ホームに戻る
+    backBtn.addEventListener('click', () => {
+      location.href = 'index.html';
+    });
+
+    // 初期表示
+    const logs = loadLogs();
+    renderTable(logs);
+    renderStats(logs);
+  </script>
+</body>
+</html>

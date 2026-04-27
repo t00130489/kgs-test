@@ -1980,11 +1980,12 @@ async function showResults(){
   unsubs = [];
   clearTimers();
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-  // 最新プレイヤー/スコア/イベントを取得（途中参加対策でリアルタイム蓄積に依存しない）
-  const [ps, sc, evSnap] = await Promise.all([
+  // 最新プレイヤー/スコア/イベント/設定を取得（途中参加対策でリアルタイム蓄積に依存しない）
+  const [ps, sc, evSnap, settingsSnap] = await Promise.all([
     get(ref(db,`rooms/${roomId}/players`)),
     get(ref(db,`rooms/${roomId}/scores`)),
-    get(ref(db,`rooms/${roomId}/events`))
+    get(ref(db,`rooms/${roomId}/events`)),
+    get(ref(db,`rooms/${roomId}/settings`))
   ]);
   players = ps.val() || {};
   const eventsObj = evSnap.val() || {};
@@ -1996,6 +1997,36 @@ async function showResults(){
   const winners = maxScore > 0
     ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
     : [];
+
+  // ゲームログを記録（バックエンド側に非同期で送信）
+  const settingsVal = settingsSnap.val() || {};
+  const createdAt = settingsVal.createdAt || joinTs || getServerTime();
+  const finishedAt = getServerTime();
+  const participants = Object.keys(players).sort();
+  const gameLog = {
+    roomId,
+    participants,
+    winners,
+    scores,
+    questionsCount: sequence?.length || 0,
+    mode: roomModeValue,
+    chapters: settingsVal.chapters || [],
+    duration: finishedAt - createdAt,
+    createdAt,
+    finishedAt,
+    status: 'finished'
+  };
+  
+  // サーバー側にログを送信（バックグラウンド/非同期、UI に影響なし）
+  (async () => {
+    try {
+      await fetch('https://us-central1-kgs-test-68924.cloudfunctions.net/saveGameLog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gameLog)
+      });
+    } catch(_) {}
+  })();
 
   let html = `<h2>${TEXT.labels.resultsTitle}</h2>`;
   if(winners.length){

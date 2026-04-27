@@ -115,3 +115,95 @@ exports.generateSequence = onRequest({ region: "us-central1" }, async (req, res)
     return res.status(500).json({ error: 'internal' });
   }
 });
+
+/**
+ * ゲームログ保存: クライアントからゲーム終了のログを受け取ってFirestoreに保存
+ * Body(JSON): { roomId, participants, winners, scores, questionsCount, mode, chapters, duration, createdAt, finishedAt }
+ */
+exports.saveGameLog = onRequest({ region: "us-central1" }, async (req, res) => {
+  // CORS対応
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+  try {
+    const {
+      roomId,
+      participants,
+      winners,
+      scores,
+      questionsCount,
+      mode,
+      chapters,
+      duration,
+      createdAt,
+      finishedAt,
+      status
+    } = req.body || {};
+
+    if (!roomId || !participants || !Array.isArray(participants)) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const logEntry = {
+      roomId,
+      participants: Array.isArray(participants) ? participants : [],
+      winners: Array.isArray(winners) ? winners : [],
+      scores: scores || {},
+      questionsCount: Number(questionsCount) || 0,
+      mode: mode || 'input',
+      chapters: Array.isArray(chapters) ? chapters : [],
+      duration: Number(duration) || 0,
+      createdAt: Number(createdAt) || Date.now(),
+      finishedAt: Number(finishedAt) || Date.now(),
+      status: status || 'finished',
+      savedAt: admin.database.ServerValue.TIMESTAMP
+    };
+
+    // Firestoreに保存
+    const firestore = admin.firestore();
+    const docRef = await firestore.collection('gameLogs').add(logEntry);
+
+    return res.json({ success: true, logId: docRef.id });
+  } catch (e) {
+    console.error('saveGameLog error', e);
+    return res.status(500).json({ error: 'internal' });
+  }
+});
+
+/**
+ * ゲームログ取得: Firestore からゲームログを取得して返す HTTP 関数
+ * クエリパラメータ: limit (デフォルト 100)
+ */
+exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
+  // CORS対応
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+  try {
+    const limit = Math.min(Number(req.query.limit) || 100, 1000);
+    
+    const firestore = admin.firestore();
+    const snapshot = await firestore
+      .collection('gameLogs')
+      .orderBy('finishedAt', 'desc')
+      .limit(limit)
+      .get();
+    
+    const logs = [];
+    snapshot.forEach(doc => {
+      logs.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+
+    return res.json({ logs });
+  } catch (e) {
+    console.error('getGameLogs error', e);
+    return res.status(500).json({ error: 'internal' });
+  }
+});
