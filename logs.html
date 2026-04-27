@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ゲームログ | KGS</title>
+  <title>ログ | kgs-test</title>
   <style>
     * {
       margin: 0;
@@ -146,13 +146,25 @@
       font-size: 0.85rem;
       color: #999;
     }
-    .empty-state {
+    .empty-state, .loading-state {
       text-align: center;
       padding: 3rem 1rem;
       color: #999;
     }
-    .empty-state h2 {
+    .empty-state h2, .loading-state h2 {
       margin-bottom: 1rem;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      margin: 0 auto 1.5rem;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
     .expand-btn {
       background: none;
@@ -176,6 +188,22 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 1rem;
+    }
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s;
+    }
+    th.sortable:hover {
+      background: #e8ebf0;
+    }
+    .sort-icon {
+      font-size: 0.8rem;
+      margin-left: 0.2rem;
+      color: #999;
+    }
+    th.sortable.active .sort-icon {
+      color: #667eea;
     }
     @media (max-width: 768px) {
       .details-content {
@@ -205,33 +233,39 @@
     
     <div class="header-controls">
       <input type="text" class="search-input" id="searchInput" placeholder="ルームID または プレイヤー名で検索">
+      <input type="date" class="search-input" id="startDate" title="開始日">
+      <span>〜</span>
+      <input type="date" class="search-input" id="endDate" title="終了日">
       <button class="secondary" id="exportBtn">📥 CSV エクスポート</button>
-      <button class="secondary" id="clearBtn">🗑️ ログをクリア</button>
-      <button id="backBtn">🏠 ホームに戻る</button>
     </div>
 
     <div class="stats" id="stats"></div>
 
     <div class="logs-table-wrapper">
-      <table id="logsTable">
+      <table id="logsTable" style="display: none;">
         <thead>
           <tr>
             <th></th>
-            <th>日時</th>
-            <th>ルームID</th>
-            <th>参加者</th>
-            <th>優勝者</th>
-            <th>正解数</th>
-            <th>問題数</th>
-            <th>形式</th>
-            <th>時間</th>
+            <th class="sortable active" data-sort="date">日時 <span class="sort-icon">▼</span></th>
+            <th class="sortable" data-sort="roomId">ルームID <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="host">ホスト <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="participantsCount">参加人数 <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="winner">優勝者 <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="questions">問題数 <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="mode">形式 <span class="sort-icon"></span></th>
+            <th class="sortable" data-sort="status">ステータス <span class="sort-icon"></span></th>
           </tr>
         </thead>
         <tbody id="logsBody"></tbody>
       </table>
     </div>
 
-    <div class="empty-state" id="emptyState">
+    <div class="loading-state" id="loadingState">
+      <div class="spinner"></div>
+      <h2>ゲームログを読み込んでいます...</h2>
+    </div>
+
+    <div class="empty-state" id="emptyState" style="display: none;">
       <h2>ゲームログがまだ記録されていません</h2>
       <p>ゲームをはじめてみましょう！</p>
     </div>
@@ -239,13 +273,16 @@
 
   <script>
     const searchInput = document.getElementById('searchInput');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
     const exportBtn = document.getElementById('exportBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const backBtn = document.getElementById('backBtn');
     const statsDiv = document.getElementById('stats');
     const logsTable = document.getElementById('logsTable');
     const logsBody = document.getElementById('logsBody');
     const emptyState = document.getElementById('emptyState');
+    const loadingState = document.getElementById('loadingState');
+    
+    let currentSort = { key: 'date', order: 'desc' };
 
     // API からゲームログを取得
     async function fetchLogs() {
@@ -263,7 +300,8 @@
     // テーブルを再描画
     function renderTable(logs) {
       logsBody.innerHTML = '';
-      
+      loadingState.style.display = 'none';
+
       if (logs.length === 0) {
         logsTable.style.display = 'none';
         emptyState.style.display = 'block';
@@ -272,15 +310,27 @@
 
       logsTable.style.display = 'table';
       emptyState.style.display = 'none';
-
       logs.forEach((log, index) => {
-        const date = new Date(log.finishedAt);
+        const date = new Date(log.createdAt || log.finishedAt);
         const timeStr = date.toLocaleString('ja-JP');
-        const durationMin = Math.floor(log.duration / 60000);
         const winners = log.winners || [];
-        const maxScore = Math.max(...Object.values(log.scores || {}), 0);
-        const isIncomplete = log.status === 'incomplete';
-        const statusBadge = isIncomplete ? '<span style="background: #ffcccc; color: #c00; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">途中終了</span>' : '';
+        const participantsCount = log.participants ? log.participants.length : 0;
+        const hostName = log.host || (log.participants && log.participants.length > 0 ? log.participants[0] : '-');
+        
+        let statusBadge = '';
+        let statusText = '完了';
+        if (log.status === 'incomplete') {
+          statusText = '途中終了';
+          statusBadge = '<span style="background: #ffcccc; color: #c00; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">途中終了</span>';
+        } else if (log.status === 'in-progress') {
+          statusText = '進行中';
+          statusBadge = '<span style="background: #e3f2fd; color: #1976d2; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">進行中</span>';
+        } else {
+          statusText = '終了';
+          statusBadge = '<span style="background: #c8e6c9; color: #2e7d32; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">終了</span>';
+        }
+
+        const isUnfinished = log.status === 'incomplete' || log.status === 'in-progress';
 
         // メインの行
         const mainRow = document.createElement('tr');
@@ -288,12 +338,12 @@
           <td><button class="expand-btn" data-index="${index}">▼</button></td>
           <td class="timestamp">${timeStr}</td>
           <td class="room-id">${log.roomId}</td>
-          <td class="participants">${log.participants?.join(', ') || '-'}</td>
-          <td><span class="winner">${isIncomplete ? '（途中終了）' : (winners.join(', ') || 'なし')}</span></td>
-          <td>${maxScore}</td>
-          <td>${isIncomplete ? `${log.currentQuestion || 0}/${log.questionsCount}` : log.questionsCount}</td>
+          <td>${hostName}</td>
+          <td>${participantsCount}人</td>
+          <td><span class="winner">${isUnfinished ? 'ー' : (winners.join(', ') || 'なし')}</span></td>
+          <td>${log.questionsCount}</td>
           <td><span class="mode ${log.mode}">${log.mode === 'select' ? '選択' : '入力'}</span></td>
-          <td>${durationMin}分 ${statusBadge}</td>
+          <td>${statusBadge}</td>
         `;
 
         // 詳細情報の行
@@ -304,19 +354,15 @@
             <div class="details-cell">
               <div class="details-content">
                 <div>
-                  <h4>スコア内訳</h4>
-                  <ul style="list-style: none;">
-                    ${Object.entries(log.scores || {})
-                      .map(([nick, score]) => `<li>${nick}: ${score}問正解</li>`)
-                      .join('')}
-                  </ul>
+                  <h4>参加者</h4>
+                  <p>${log.participants?.join(', ') || '-'}</p>
                 </div>
                 <div>
                   <h4>ゲーム情報</h4>
                   <p><strong>範囲:</strong> ${log.chapters?.join(', ') || '-'}</p>
-                  <p><strong>進捗:</strong> ${isIncomplete ? `${log.currentQuestion || 0}/${log.questionsCount}問` : `${log.questionsCount}問中 ${maxScore}問正解`}</p>
+                  <p><strong>問題数:</strong> ${log.questionsCount}問</p>
                   <p><strong>開始:</strong> ${new Date(log.createdAt).toLocaleString('ja-JP')}</p>
-                  <p><strong>ステータス:</strong> ${isIncomplete ? '<span style="color: #f57c00; font-weight: 600;">途中終了</span>' : '完了'}</p>
+                  <p><strong>ステータス:</strong> <span style="font-weight: 600;">${statusText}</span></p>
                 </div>
               </div>
             </div>
@@ -372,44 +418,132 @@
       `;
     }
 
-    // 検索フィルタ
-    function filterLogs(query, logs) {
-      if (!query) return logs;
+    // 検索・日付フィルタ
+    function filterLogs(query, startDate, endDate, logs) {
+      let filtered = logs;
 
-      const q = query.toLowerCase();
-      return logs.filter(log =>
-        log.roomId.toLowerCase().includes(q) ||
-        log.participants?.some(p => p.toLowerCase().includes(q)) ||
-        log.winners?.some(w => w.toLowerCase().includes(q))
-      );
+      if (startDate) {
+        const start = new Date(startDate).setHours(0, 0, 0, 0);
+        filtered = filtered.filter(log => (log.createdAt || log.finishedAt) >= start);
+      }
+      if (endDate) {
+        const end = new Date(endDate).setHours(23, 59, 59, 999);
+        filtered = filtered.filter(log => (log.createdAt || log.finishedAt) <= end);
+      }
+
+      if (query) {
+        const q = query.toLowerCase();
+        filtered = filtered.filter(log =>
+          log.roomId.toLowerCase().includes(q) ||
+          (log.host && log.host.toLowerCase().includes(q)) ||
+          log.participants?.some(p => p.toLowerCase().includes(q)) ||
+          log.winners?.some(w => w.toLowerCase().includes(q)) ||
+          (log.status && log.status.toLowerCase().includes(q))
+        );
+      }
+
+      return filtered;
     }
 
-    // 検索イベント（非同期）
+    // ソート
+    function sortLogs(logs, sortKey, sortOrder) {
+      return [...logs].sort((a, b) => {
+        let valA, valB;
+
+        switch (sortKey) {
+          case 'date':
+            valA = a.createdAt || a.finishedAt; valB = b.createdAt || b.finishedAt; break;
+          case 'roomId':
+            valA = a.roomId; valB = b.roomId; break;
+          case 'host':
+            valA = a.host || (a.participants && a.participants.length > 0 ? a.participants[0] : '');
+            valB = b.host || (b.participants && b.participants.length > 0 ? b.participants[0] : ''); break;
+          case 'participantsCount':
+            valA = a.participants ? a.participants.length : 0;
+            valB = b.participants ? b.participants.length : 0; break;
+          case 'winner':
+            valA = a.winners ? a.winners.join(',') : '';
+            valB = b.winners ? b.winners.join(',') : ''; break;
+          case 'questions':
+            valA = a.questionsCount || 0; valB = b.questionsCount || 0; break;
+          case 'mode':
+            valA = a.mode; valB = b.mode; break;
+          case 'status':
+            valA = a.status || ''; valB = b.status || ''; break;
+          default:
+            return 0;
+        }
+
+        if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
     let currentLogs = [];
-    searchInput.addEventListener('input', (e) => {
-      const filtered = filterLogs(e.target.value, currentLogs);
-      renderTable(filtered);
+
+    // 表示更新
+    function updateView() {
+      const filtered = filterLogs(searchInput.value, startDateInput.value, endDateInput.value, currentLogs);
+      const sorted = sortLogs(filtered, currentSort.key, currentSort.order);
+      renderTable(sorted);
+      renderStats(sorted);
+    }
+
+    searchInput.addEventListener('input', updateView);
+    startDateInput.addEventListener('change', updateView);
+    endDateInput.addEventListener('change', updateView);
+
+    // ソートイベント
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const sortKey = th.dataset.sort;
+        if (currentSort.key === sortKey) {
+          currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSort.key = sortKey;
+          currentSort.order = 'desc';
+        }
+        
+        document.querySelectorAll('th.sortable').forEach(el => {
+          el.classList.remove('active');
+          el.querySelector('.sort-icon').textContent = '';
+        });
+        th.classList.add('active');
+        th.querySelector('.sort-icon').textContent = currentSort.order === 'asc' ? '▲' : '▼';
+
+        updateView();
+      });
     });
 
     // CSV エクスポート
     exportBtn.addEventListener('click', () => {
-      if (currentLogs.length === 0) {
+      const filtered = filterLogs(searchInput.value, startDateInput.value, endDateInput.value, currentLogs);
+      const sorted = sortLogs(filtered, currentSort.key, currentSort.order);
+      
+      if (sorted.length === 0) {
         alert('エクスポートするログがありません');
         return;
       }
 
-      const headers = ['日時', 'ルームID', '参加者', '優勝者', '問題数', '形式', '時間(分)'];
-      const rows = currentLogs.map(log => {
-        const date = new Date(log.finishedAt).toLocaleString('ja-JP');
-        const durationMin = Math.floor(log.duration / 60000);
+      const headers = ['日時', 'ルームID', 'ホスト', '参加人数', '優勝者', '問題数', '形式', 'ステータス'];
+      const rows = sorted.map(log => {
+        const date = new Date(log.createdAt || log.finishedAt).toLocaleString('ja-JP');
+        const participantsCount = log.participants ? log.participants.length : 0;
+        const hostName = log.host || (log.participants && log.participants.length > 0 ? log.participants[0] : '-');
+        let statusText = '終了';
+        if (log.status === 'incomplete') statusText = '途中終了';
+        else if (log.status === 'in-progress') statusText = '進行中';
+
         return [
           date,
           log.roomId,
-          log.participants?.join('; ') || '',
-          log.winners?.join('; ') || '',
+          hostName,
+          participantsCount,
+          log.status === 'finished' ? (log.winners?.join('; ') || '') : '',
           log.questionsCount,
           log.mode === 'select' ? '選択' : '入力',
-          durationMin
+          statusText
         ];
       });
 
@@ -424,22 +558,11 @@
       link.click();
     });
 
-    // ログをクリア（Firestore の削除は管理者のみが関数経由で行う）
-    clearBtn.addEventListener('click', () => {
-      alert('ログの削除は管理者のみが実行できます');
-    });
-
-    // ホームに戻る
-    backBtn.addEventListener('click', () => {
-      location.href = 'index.html';
-    });
-
     // 初期表示
     async function init() {
       const logs = await fetchLogs();
       currentLogs = logs;
-      renderTable(logs);
-      renderStats(logs);
+      updateView();
     }
     init();
   </script>

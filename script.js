@@ -1998,35 +1998,8 @@ async function showResults(){
     ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
     : [];
 
-  // ゲームログを記録（バックエンド側に非同期で送信）
-  const settingsVal = settingsSnap.val() || {};
-  const createdAt = settingsVal.createdAt || joinTs || getServerTime();
-  const finishedAt = getServerTime();
-  const participants = Object.keys(players).sort();
-  const gameLog = {
-    roomId,
-    participants,
-    winners,
-    scores,
-    questionsCount: sequence?.length || 0,
-    mode: roomModeValue,
-    chapters: settingsVal.chapters || [],
-    duration: finishedAt - createdAt,
-    createdAt,
-    finishedAt,
-    status: 'finished'
-  };
-  
-  // サーバー側にログを送信（バックグラウンド/非同期、UI に影響なし）
-  (async () => {
-    try {
-      await fetch('https://us-central1-kgs-test-68924.cloudfunctions.net/saveGameLog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gameLog)
-      });
-    } catch(_) {}
-  })();
+  // ゲームログは、rooms/{roomId}/settings/finishedAt が作成されたタイミングで
+  // バックエンド (functions/index.js) の onRoomFinished トリガーにより自動的にFirestoreに保存されます。
 
   let html = `<h2>${TEXT.labels.resultsTitle}</h2>`;
   if(winners.length){

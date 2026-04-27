@@ -33,8 +33,27 @@ exports.scheduledCleanupRooms = onSchedule(
         if (!settings.finishedAt) {
           const roomData = roomSnap.val();
           if (roomData) {
-            roomData.status = 'incomplete';
-            logPromises.push(firestore.collection('gameLogs').add(roomData));
+            const scores = roomData.scores || {};
+            const players = roomData.players || {};
+            const sequence = roomData.sequence || [];
+            
+            const logEntry = {
+              roomId: roomSnap.key,
+              host: settings.host || '',
+              participants: Object.keys(players).sort(),
+              winners: [],
+              scores: scores,
+              questionsCount: sequence.length || settings.count || 0,
+              mode: settings.mode || 'input',
+              chapters: settings.chapters || [],
+              duration: Date.now() - (settings.createdAt || Date.now()),
+              createdAt: settings.createdAt || Date.now(),
+              finishedAt: Date.now(),
+              status: 'incomplete',
+              currentQuestion: roomData.currentIndex || 0,
+              savedAt: admin.database.ServerValue.TIMESTAMP
+            };
+            logPromises.push(firestore.collection('gameLogs').add(logEntry));
           }
         }
       }
@@ -64,10 +83,35 @@ exports.onRoomFinished = onValueCreated(
 
       if (!roomData) return;
 
-      roomData.status = 'finished';
+      const settings = roomData.settings || {};
+      const scores = roomData.scores || {};
+      const players = roomData.players || {};
+      const sequence = roomData.sequence || [];
+      
+      const scoreValues = Object.values(scores).map(v => v || 0);
+      const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
+      const winners = maxScore > 0
+        ? Object.keys(scores).filter(nick => (scores[nick] || 0) === maxScore)
+        : [];
+
+      const logEntry = {
+        roomId: roomId,
+        host: settings.host || '',
+        participants: Object.keys(players).sort(),
+        winners: winners,
+        scores: scores,
+        questionsCount: sequence.length || settings.count || 0,
+        mode: settings.mode || 'input',
+        chapters: settings.chapters || [],
+        duration: (settings.finishedAt || Date.now()) - (settings.createdAt || Date.now()),
+        createdAt: settings.createdAt || Date.now(),
+        finishedAt: settings.finishedAt || Date.now(),
+        status: 'finished',
+        savedAt: admin.database.ServerValue.TIMESTAMP
+      };
 
       const firestore = admin.firestore();
-      await firestore.collection('gameLogs').add(roomData);
+      await firestore.collection('gameLogs').add(logEntry);
     } catch (e) {
       console.error('onRoomFinished error', e);
     }
@@ -169,6 +213,7 @@ exports.saveGameLog = onRequest({ region: "us-central1" }, async (req, res) => {
   try {
     const {
       roomId,
+      host,
       participants,
       winners,
       scores,
@@ -187,6 +232,7 @@ exports.saveGameLog = onRequest({ region: "us-central1" }, async (req, res) => {
 
     const logEntry = {
       roomId,
+      host: host || '',
       participants: Array.isArray(participants) ? participants : [],
       winners: Array.isArray(winners) ? winners : [],
       scores: scores || {},
@@ -228,7 +274,7 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
     const firestore = admin.firestore();
     const snapshot = await firestore
       .collection('gameLogs')
-      .orderBy('finishedAt', 'desc')
+      .orderBy('createdAt', 'desc')
       .limit(limit)
       .get();
     
@@ -240,7 +286,43 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
       });
     });
 
-    return res.json({ logs });
+    // Realtime Databaseから進行中のルームを取得してマージ
+    const rtdbSnap = await db.ref('rooms').once('value');
+    rtdbSnap.forEach(roomSnap => {
+      const roomData = roomSnap.val();
+      if (!roomData) return;
+      const settings = roomData.settings || {};
+      
+      // finishedAtが存在しないものは進行中
+      if (!settings.finishedAt) {
+        const scores = roomData.scores || {};
+        const players = roomData.players || {};
+        const sequence = roomData.sequence || [];
+        
+        logs.push({
+          id: roomSnap.key,
+          roomId: roomSnap.key,
+          host: settings.host || '',
+          participants: Object.keys(players).sort(),
+          winners: [],
+          scores: scores,
+          questionsCount: sequence.length || settings.count || 0,
+          mode: settings.mode || 'input',
+          chapters: settings.chapters || [],
+          duration: Date.now() - (settings.createdAt || Date.now()),
+          createdAt: settings.createdAt || Date.now(),
+          finishedAt: Date.now(), // ソート用
+          status: 'in-progress',
+          currentQuestion: roomData.currentIndex || 0,
+          savedAt: Date.now()
+        });
+      }
+    });
+
+    // createdAt で降順ソート
+    logs.sort((a, b) => b.createdAt - a.createdAt);
+
+    return res.json({ logs: logs.slice(0, limit) });
   } catch (e) {
     console.error('getGameLogs error', e);
     return res.status(500).json({ error: 'internal' });
