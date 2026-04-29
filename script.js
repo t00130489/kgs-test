@@ -465,10 +465,15 @@ const feedbackOverlay = document.getElementById('feedback-overlay');
 // Confetti canvas
 const confettiCanvas = document.getElementById('confetti-canvas');
 let confettiCtx = null;
+let _lastInnerWidth = window.innerWidth;
 if (confettiCanvas) {
   const resize = () => {
-    confettiCanvas.width = window.innerWidth;
-    confettiCanvas.height = window.innerHeight;
+    // 幅が変わった時のみリサイズ（スマホのキーボード表示等による高さ変動でキャンバスがクリアされるのを防ぐ）
+    if (window.innerWidth !== _lastInnerWidth || !confettiCanvas.width) {
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+      _lastInnerWidth = window.innerWidth;
+    }
   };
   resize();
   window.addEventListener('resize', resize);
@@ -2050,13 +2055,6 @@ window.addEventListener('unload',()=>{
 });
 
 // --- 最終結果画面の空欄回答と時間切れの区別 ---
-// 回答一覧表示部分を修正
-function getAnswerDisplay(ans, timedOut) {
-  if (timedOut) return '時間切れ';
-  if (ans === '') return '（空欄）';
-  return ans;
-}
-
 // statusElにテキストをセット。空の場合は全角スペースで高さ維持
 function setStatus(text) {
   statusEl.textContent = text && text.trim() ? text : '　';
@@ -2072,6 +2070,8 @@ function normalizeJa(s) {
   // 句読点・記号など軽めに除去（必要に応じて拡張）
   t = t.replace(/[\s\u3000]+/g, ' ');
   t = t.replace(/[、。・,\.\-_/\(\)\[\]{}\u3001\u3002\u30fb]/g, '');
-  // カタカナはそのまま。ひらがな⇔カタカナ変換は仕様次第。
-  return t;
+  // ひらがなをカタカナに変換して比較のブレを吸収
+  t = t.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x0060));
+  // アルファベットを小文字に統一
+  return t.toLowerCase();
 }
