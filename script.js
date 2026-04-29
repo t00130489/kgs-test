@@ -1839,9 +1839,11 @@ function createRipple(e) {
 // 解答ボタンのクリック・Enter対応
 async function submitAnswer() {
   answerBtn.disabled = true;
-  const guess = normalizeJa(answerInput.value);
+  const rawGuess = answerInput.value;
+  const guess = normalizeJa(rawGuess);
   // 空欄でも回答可能にし、不正解として処理
-  const corr = normalizeJa(sequence[idx].answer);
+  const rawAnswer = sequence[idx].answer;
+  const corr = normalizeJa(rawAnswer);
   const isCorrect = (guess === corr && guess !== '');
 
   // 入力モード: 手元で即時フィードバック（全員表示はイベント経由でも行われる）
@@ -1853,8 +1855,8 @@ async function submitAnswer() {
   const ev = {
     nick: myNick,
     correct: isCorrect,
-    guess: guess,
-    answer: corr,
+    guess: rawGuess, // 表示・履歴用に元の入力を保持
+    answer: rawAnswer, // 表示・履歴用に元の正解を保持
     questionIndex: idx,
     timestamp: getServerTime()
   };
@@ -1869,7 +1871,7 @@ async function submitAnswer() {
     pausedRemainingQTime = null;
   revealFullQuestionAndStopSync();
     if (!spectatorUntilNext) {
-      qTimerEl.textContent = '正解：' + corr;
+      qTimerEl.textContent = '正解：' + rawAnswer; // 元の正解を表示
       qTimerEl.style.display = 'block';
     } else {
       qTimerEl.textContent = '';
