@@ -11,61 +11,110 @@ const db = admin.database();
 
 /**
  * 定期クリーンアップ: createdAt から2時間以上経過した古いルームを削除
+ *
+ * 注意:
+ * - rooms 配下を once("value") で全件ロードすると sequence まで引っ張ってしまい
+ *   （全体の約75%）、件数が増えるとメモリ上限で落ちて1件も削除できなくなる。
+ *   そのため orderByChild + limitToFirst でサーバ側に絞らせ、少しずつ処理する。
+ *   このクエリには database.rules.json の rooms/".indexOn" が必須。
+ * - 削除を先に確定させ、ログ保存の失敗が削除を巻き添えにしないようにする。
  */
-exports.scheduledCleanupRooms = onSchedule(
-  /* 1時間ごとに実行 */ 
-  "every 60 minutes",
-  async (event) => {
-  const cutoff   = Date.now() - 2 * 60 * 60 * 1000; // 今から2h 前
-    const roomsRef = db.ref("rooms");
-    const snap     = await roomsRef.once("value");
-    const updates  = {};
-    const logPromises = [];
-    const firestore = admin.firestore();
+const CLEANUP_BATCH_SIZE = 50;
+const CLEANUP_MAX_BATCHES = 200;
+const CLEANUP_DEADLINE_MS = 240 * 1000; // timeoutSeconds に対する安全マージン
 
-    snap.forEach((roomSnap) => {
-      const settings = roomSnap.child("settings").val();
-      if (settings && settings.createdAt < cutoff) {
-        // 2h 過ぎていれば削除対象
+exports.scheduledCleanupRooms = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    region: "us-central1",
+    memory: "512MiB",
+    timeoutSeconds: 300,
+  },
+  async (event) => {
+    const startedAt = Date.now();
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000; // 今から2h 前
+    const roomsRef = db.ref("rooms");
+    const firestore = admin.firestore();
+    let deletedTotal = 0;
+    let loggedTotal = 0;
+
+    for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch++) {
+      if (Date.now() - startedAt > CLEANUP_DEADLINE_MS) {
+        console.warn(`cleanup: deadline reached, ${deletedTotal} rooms deleted so far`);
+        break;
+      }
+
+      // createdAt が cutoff 以下のルームだけを取得（createdAt 無しは先頭に並ぶ）
+      const snap = await roomsRef
+        .orderByChild("settings/createdAt")
+        .endAt(cutoff)
+        .limitToFirst(CLEANUP_BATCH_SIZE)
+        .once("value");
+
+      if (!snap.numChildren()) break;
+
+      const updates = {};
+      const logEntries = [];
+
+      snap.forEach((roomSnap) => {
+        const settings = roomSnap.child("settings").val() || {};
+        const createdAt = settings.createdAt;
+        const playerCount = roomSnap.child("players").numChildren();
+
+        if (typeof createdAt === "number") {
+          if (createdAt >= cutoff) return; // クエリ境界の取りこぼし対策
+        } else if (playerCount > 0) {
+          // createdAt 不明かつ在室者ありは、進行中の可能性があるので触らない
+          return;
+        }
+
         updates[roomSnap.key] = null;
 
         // finishedAtが存在しない（終了印がない）場合は途中終了とみなす
         if (!settings.finishedAt) {
-          const roomData = roomSnap.val();
-          if (roomData) {
-            const scores = roomData.scores || {};
-            const players = roomData.players || {};
-            const sequence = roomData.sequence || [];
-            
-            const logEntry = {
-              roomId: roomSnap.key,
-              host: settings.host || '',
-              participants: Object.keys(players).sort(),
-              winners: [],
-              scores: scores,
-              questionsCount: sequence.length || settings.count || 0,
-              mode: settings.mode || 'input',
-              chapters: settings.chapters || [],
-              duration: Date.now() - (settings.createdAt || Date.now()),
-              createdAt: settings.createdAt || Date.now(),
-              finishedAt: Date.now(),
-              status: 'incomplete',
-              currentQuestion: roomData.currentIndex || 0,
-              savedAt: admin.database.ServerValue.TIMESTAMP
-            };
-            logPromises.push(firestore.collection('gameLogs').add(logEntry));
-          }
+          // sequence は件数だけ取り、本体はメモリに残さない
+          logEntries.push({
+            roomId: roomSnap.key,
+            host: settings.host || '',
+            participants: Object.keys(roomSnap.child("players").val() || {}).sort(),
+            winners: [],
+            scores: roomSnap.child("scores").val() || {},
+            questionsCount: roomSnap.child("sequence").numChildren() || settings.count || 0,
+            mode: settings.mode || 'input',
+            chapters: settings.chapters || [],
+            duration: Date.now() - (createdAt || Date.now()),
+            createdAt: createdAt || Date.now(),
+            finishedAt: Date.now(),
+            status: 'incomplete',
+            currentQuestion: roomSnap.child("currentIndex").val() || 0,
+            savedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
         }
+      });
+
+      if (!Object.keys(updates).length) {
+        // 全件スキップ（進行中扱い）だと同じバッチを引き続けるため打ち切る
+        console.warn('cleanup: batch had no deletable rooms, stopping');
+        break;
       }
-    });
 
-    if (logPromises.length > 0) {
-      await Promise.all(logPromises);
-    }
-
-    if (Object.keys(updates).length) {
+      // 先に削除を確定させる
       await roomsRef.update(updates);
+      deletedTotal += Object.keys(updates).length;
+
+      // ログ保存は best-effort（失敗しても削除は巻き戻さない）
+      if (logEntries.length) {
+        const results = await Promise.allSettled(
+          logEntries.map(entry => firestore.collection('gameLogs').add(entry))
+        );
+        results.forEach(r => {
+          if (r.status === 'fulfilled') loggedTotal++;
+          else console.error('cleanup: gameLog save failed', r.reason);
+        });
+      }
     }
+
+    console.log(`cleanup: deleted ${deletedTotal} rooms, saved ${loggedTotal} incomplete logs`);
   }
 );
 
@@ -107,7 +156,7 @@ exports.onRoomFinished = onValueCreated(
         createdAt: settings.createdAt || Date.now(),
         finishedAt: settings.finishedAt || Date.now(),
         status: 'finished',
-        savedAt: admin.database.ServerValue.TIMESTAMP
+        savedAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
       const firestore = admin.firestore();
@@ -243,7 +292,7 @@ exports.saveGameLog = onRequest({ region: "us-central1" }, async (req, res) => {
       createdAt: Number(createdAt) || Date.now(),
       finishedAt: Number(finishedAt) || Date.now(),
       status: status || 'finished',
-      savedAt: admin.database.ServerValue.TIMESTAMP
+      savedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
     // Firestoreに保存
@@ -280,40 +329,43 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
     
     const logs = [];
     snapshot.forEach(doc => {
-      logs.push({
-        id: doc.id,
-        ...doc.data()
-      });
+      const data = doc.data();
+      // Firestore Timestamp をミリ秒に正規化（旧データはセンチネルのマップが入っている）
+      if (data.savedAt && typeof data.savedAt.toMillis === 'function') {
+        data.savedAt = data.savedAt.toMillis();
+      } else if (data.savedAt && typeof data.savedAt !== 'number') {
+        data.savedAt = null;
+      }
+      logs.push({ id: doc.id, ...data });
     });
 
     // Realtime Databaseから進行中のルームを取得してマージ
-    const rtdbSnap = await db.ref('rooms').once('value');
+    // 全件 once("value") はメモリ上限で落ちるため、新しい順に limit 件だけ読む
+    // （orderByChild には database.rules.json の rooms/".indexOn" が必要）
+    const rtdbSnap = await db.ref('rooms')
+      .orderByChild('settings/createdAt')
+      .limitToLast(Math.min(limit, 200))
+      .once('value');
     rtdbSnap.forEach(roomSnap => {
-      const roomData = roomSnap.val();
-      if (!roomData) return;
-      const settings = roomData.settings || {};
-      
+      const settings = roomSnap.child('settings').val() || {};
+
       // finishedAtが存在しないものは進行中
       if (!settings.finishedAt) {
-        const scores = roomData.scores || {};
-        const players = roomData.players || {};
-        const sequence = roomData.sequence || [];
-        
         logs.push({
           id: roomSnap.key,
           roomId: roomSnap.key,
           host: settings.host || '',
-          participants: Object.keys(players).sort(),
+          participants: Object.keys(roomSnap.child('players').val() || {}).sort(),
           winners: [],
-          scores: scores,
-          questionsCount: sequence.length || settings.count || 0,
+          scores: roomSnap.child('scores').val() || {},
+          questionsCount: roomSnap.child('sequence').numChildren() || settings.count || 0,
           mode: settings.mode || 'input',
           chapters: settings.chapters || [],
           duration: Date.now() - (settings.createdAt || Date.now()),
           createdAt: settings.createdAt || Date.now(),
           finishedAt: Date.now(), // ソート用
           status: 'in-progress',
-          currentQuestion: roomData.currentIndex || 0,
+          currentQuestion: roomSnap.child('currentIndex').val() || 0,
           savedAt: Date.now()
         });
       }

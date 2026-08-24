@@ -752,7 +752,9 @@ main {
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 25rem;
+  /* 25rem(=400px)固定だとスマホで〇/×が画面幅を超えて切れる */
+  font-size: clamp(8rem, 45vmin, 25rem);
+  line-height: 1;
   z-index: 1000;
   pointer-events: none;
 }
@@ -768,6 +770,7 @@ main {
 .confetti-canvas {
   position: fixed;
   inset: 0;
+  display: block; /* inline要素のベースライン隙間でCSSボックスがずれるのを防ぐ */
   width: 100vw;
   width: 100svw;
   width: 100dvw;

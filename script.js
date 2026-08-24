@@ -464,35 +464,50 @@ const questionCardBlock = document.getElementById('question-card-block');
 const feedbackOverlay = document.getElementById('feedback-overlay');
 // Confetti canvas
 const confettiCanvas = document.getElementById('confetti-canvas');
-let confettiCtx = null;
-let _lastInnerWidth = window.innerWidth;
-if (confettiCanvas) {
-  const resize = () => {
-    // 幅が変わった時のみリサイズ（スマホのキーボード表示等による高さ変動でキャンバスがクリアされるのを防ぐ）
-    if (window.innerWidth !== _lastInnerWidth || !confettiCanvas.width) {
-      confettiCanvas.width = window.innerWidth;
-      confettiCanvas.height = window.innerHeight;
-      _lastInnerWidth = window.innerWidth;
-    }
-  };
-  resize();
-  window.addEventListener('resize', resize);
-  confettiCtx = confettiCanvas.getContext('2d');
+let confettiCtx = confettiCanvas ? confettiCanvas.getContext('2d') : null;
+
+/**
+ * 描画バッファ(width/height属性)をCSSボックスの実寸に合わせる。
+ * canvasはバッファとCSSサイズが別管理で、ズレるとズレた軸だけ非等方に
+ * 引き伸ばされる（スマホではアドレスバーの出入りやキーボード開閉で
+ * innerWidthは変わらず高さだけ変わるため、縦に伸びたまま固定されていた）。
+ * リサイズのたびに合わせるとバッファがクリアされるので、バースト開始時にだけ測る。
+ * @returns {{w:number,h:number}} CSSピクセルでの描画領域サイズ
+ */
+function syncConfettiCanvas() {
+  const rect = confettiCanvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(rect.width * dpr));
+  const h = Math.max(1, Math.round(rect.height * dpr));
+  if (confettiCanvas.width !== w || confettiCanvas.height !== h) {
+    confettiCanvas.width = w;
+    confettiCanvas.height = h;
+  }
+  // 以降はCSSピクセル座標で描ける（バッファ再確保で変換が消えるため毎回設定）
+  confettiCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w: rect.width, h: rect.height };
 }
 
 // Sound disabled by request
 function playJingle() { /* disabled */ }
 
 // Confetti particle system (very small, single burst)
-function burstConfetti({x=window.innerWidth/2, y=window.innerHeight*0.35, count=90}={}) {
+// 座標・速度・サイズはすべてCSSピクセル基準。物理量は画面の短辺に比例させ、
+// スマホとPCで見え方の縮尺が揃うようにする。
+function burstConfetti({x=null, y=null, count=90}={}) {
   if (!confettiCtx || !confettiCanvas) return;
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const { w, h } = syncConfettiCanvas();
+  const originX = (x == null) ? w / 2 : x;
+  const originY = (y == null) ? h * 0.35 : y;
+  const scale = Math.min(w, h) / 800;          // 速度・重力は画面比例
+  const sizeScale = Math.max(0.75, Math.min(1.4, scale)); // 紙片は小さくなりすぎない程度に
   const colors = ['#ff5252','#ffb300','#ffd54f','#4dd0e1','#81c784','#ba68c8'];
   const parts = Array.from({length: Math.max(20, Math.min(200, count))}, () => ({
-    x, y,
-    vx: (Math.random()*2-1) * 6,
-    vy: (Math.random()*-1) * (6+Math.random()*6) - 4,
-    size: 3 + Math.random()*4,
+    x: originX, y: originY,
+    vx: (Math.random()*2-1) * 6 * scale,
+    vy: ((Math.random()*-1) * (6+Math.random()*6) - 4) * scale,
+    size: (3 + Math.random()*4) * sizeScale,
     rot: Math.random()*Math.PI*2,
     vr: (Math.random()*2-1) * 0.2,
     color: colors[(Math.random()*colors.length)|0],
@@ -500,19 +515,20 @@ function burstConfetti({x=window.innerWidth/2, y=window.innerHeight*0.35, count=
   }));
   const start = performance.now();
   let last = start;
-  const grav = 0.18;
+  const grav = 0.18 * scale;
   function frame(t) {
-    const dt = t - last; last = t;
-    confettiCtx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+    const dt = Math.min(t - last, 50); last = t;
+    const k = dt / (1000 / 60); // 60fps基準の進行係数（120Hz端末で倍速にならないように）
+    confettiCtx.clearRect(0, 0, w, h);
     let alive = false;
     for (const p of parts) {
       p.life -= dt;
       if (p.life <= 0) continue;
       alive = true;
-      p.vy += grav;
-      p.x += p.vx;
-      p.y += p.vy;
-      p.rot += p.vr;
+      p.vy += grav * k;
+      p.x += p.vx * k;
+      p.y += p.vy * k;
+      p.rot += p.vr * k;
       confettiCtx.save();
       confettiCtx.translate(p.x, p.y);
       confettiCtx.rotate(p.rot);
@@ -521,7 +537,7 @@ function burstConfetti({x=window.innerWidth/2, y=window.innerHeight*0.35, count=
       confettiCtx.restore();
     }
     if (alive && t - start < 1600) requestAnimationFrame(frame);
-    else confettiCtx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+    else confettiCtx.clearRect(0, 0, w, h);
   }
   requestAnimationFrame(ts => { last = ts; frame(ts); });
 }

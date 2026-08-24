@@ -3,6 +3,7 @@
     ".read": true,
     ".write": false,
     "rooms": {
+      ".indexOn": "settings/createdAt",
       "$roomId": {
         "settings": {
           ".read": true,
