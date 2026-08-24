@@ -994,3 +994,55 @@ main {
    .styled-chapter-grid の padding, gap で出題範囲チェック群の余白を調整
    .home-btn の margin-top でボタンの余白を調整
 --- */
+
+/* --- 復帰導線カード（ホーム画面の常設） --- */
+.rejoin-card {
+  margin-bottom: 1rem;
+  border-left: 4px solid var(--primary, #004ea2);
+}
+.rejoin-title {
+  font-weight: bold;
+  font-size: 1.05rem;
+  margin-bottom: 0.25rem;
+}
+.rejoin-desc {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.8rem;
+}
+.rejoin-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.rejoin-actions button {
+  flex: 0 1 auto;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.95rem;
+}
+
+/* --- 参加者リストの接続状態 --- */
+.inline-list li.player-away,
+.inline-list li.player-offline {
+  opacity: 0.55;
+}
+.inline-list li.player-offline {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.player-state-tag {
+  display: inline-block;
+  margin-left: 0.25em;
+  padding: 0 0.4em;
+  border-radius: 3px;
+  font-size: 0.72em;
+  font-weight: normal;
+  line-height: 1.5;
+  color: #666;
+  background: #e6e8ec;
+  vertical-align: middle;
+}
+.player-offline .player-state-tag {
+  color: #8a3d3d;
+  background: #f3e0e0;
+}

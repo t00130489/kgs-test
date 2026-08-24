@@ -10,6 +10,19 @@ admin.initializeApp();
 const db = admin.database();
 
 /**
+ * 参加者一覧を players と scores の和集合から作る。
+ * 終了時に一時的に切断していた人が players から欠けても、
+ * スコアを持っていれば参加者として残るようにするため。
+ */
+function mergeParticipants(players, scores) {
+  const set = new Set([
+    ...Object.keys(players || {}),
+    ...Object.keys(scores || {})
+  ]);
+  return Array.from(set).sort();
+}
+
+/**
  * 定期クリーンアップ: createdAt から2時間以上経過した古いルームを削除
  *
  * 注意:
@@ -76,7 +89,10 @@ exports.scheduledCleanupRooms = onSchedule(
           logEntries.push({
             roomId: roomSnap.key,
             host: settings.host || '',
-            participants: Object.keys(roomSnap.child("players").val() || {}).sort(),
+            participants: mergeParticipants(
+              roomSnap.child("players").val(),
+              roomSnap.child("scores").val()
+            ),
             winners: [],
             scores: roomSnap.child("scores").val() || {},
             questionsCount: roomSnap.child("sequence").numChildren() || settings.count || 0,
@@ -146,7 +162,7 @@ exports.onRoomFinished = onValueCreated(
       const logEntry = {
         roomId: roomId,
         host: settings.host || '',
-        participants: Object.keys(players).sort(),
+        participants: mergeParticipants(players, scores),
         winners: winners,
         scores: scores,
         questionsCount: sequence.length || settings.count || 0,
@@ -355,7 +371,10 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
           id: roomSnap.key,
           roomId: roomSnap.key,
           host: settings.host || '',
-          participants: Object.keys(roomSnap.child('players').val() || {}).sort(),
+          participants: mergeParticipants(
+            roomSnap.child('players').val(),
+            roomSnap.child('scores').val()
+          ),
           winners: [],
           scores: roomSnap.child('scores').val() || {},
           questionsCount: roomSnap.child('sequence').numChildren() || settings.count || 0,

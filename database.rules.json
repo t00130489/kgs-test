@@ -13,8 +13,10 @@
         "players": {
           ".read": true,
           "$nick": {
-            ".write": true,
-            ".validate": "!newData.exists() || (newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber() && (!data.exists() || newData.child('joinedAt').val() === data.child('joinedAt').val()))"
+            ".write": "!newData.exists() || !data.exists() || !data.hasChild('clientId') || data.child('clientId').val() === newData.child('clientId').val()",
+            ".validate": "!newData.exists() || (newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber() && (!newData.hasChild('clientId') || newData.child('clientId').isString()) && (!newData.hasChild('connected') || newData.child('connected').isBoolean()) && (!data.exists() || newData.child('joinedAt').val() === data.child('joinedAt').val()))",
+            "connected": { ".validate": "newData.isBoolean() && newData.parent().hasChild('joinedAt')" },
+            "lastActive": { ".validate": "newData.isNumber() && newData.parent().hasChild('joinedAt')" }
           }
         },
         "scores": {
@@ -31,7 +33,7 @@
         "buzz": {
           ".read": true,
           ".write": true,
-          ".validate": "newData.val() == null || (newData.hasChildren(['nick','time']) && newData.child('nick').isString() && newData.child('time').isNumber() && root.child('rooms/' + $roomId + '/players/' + newData.child('nick').val()).exists())"
+          ".validate": "newData.val() == null || (newData.hasChildren(['nick','time']) && newData.child('nick').isString() && newData.child('time').isNumber() && (!newData.hasChild('remain') || newData.child('remain').isNumber()) && root.child('rooms/' + $roomId + '/players/' + newData.child('nick').val()).exists())"
         },
         "selectBuzz": {
           ".read": true,
@@ -41,7 +43,22 @@
         "wrongAnswers": { ".read": true, ".write": true },
         "sequence": { ".read": true, ".write": "newData.hasChildren()" },
         "currentIndex": { ".read": true, ".write": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999" },
-        "typePos": { ".read": true, ".write": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" }
+        "typePos": {
+          ".read": true,
+          ".write": "!newData.exists()",
+          "$questionIndex": {
+            ".write": true,
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000)"
+          }
+        },
+        "qStart": {
+          ".read": true,
+          ".write": "!newData.exists()",
+          "$questionIndex": {
+            ".write": true,
+            ".validate": "!newData.exists() || newData.isNumber()"
+          }
+        }
       }
     },
     "questions": { ".read": true, ".write": false }
