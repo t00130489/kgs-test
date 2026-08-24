@@ -25,6 +25,9 @@
   /* 主要ボタンの色を仮置き（CSS読み込み前の一瞬だけの見栄え向上） */
   .btn-primary, .btn-secondary { background:#004ea2; color:#fff; }
   .buzz-btn { background:#d32f2f; color:#fff; }
+  /* 「次の問題へ」＋「ホームに戻る」の行（CSS読み込み前の崩れ防止） */
+  .next-row { display:flex; align-items:stretch; gap:0.75rem; }
+  .btn-quiet { margin-left:auto; background:transparent; color:#555; border:1px solid #d0d5dd; }
   </style>
   <script type="module">
     (async () => {
@@ -259,7 +262,10 @@
         <div id="answer-timer" class="timer"></div>
       </div>
 
-      <button id="nextBtn" class="btn-secondary" disabled>次の問題へ</button>
+      <div class="next-row">
+        <button id="nextBtn" class="btn-secondary" disabled>次の問題へ</button>
+        <button id="homeBtn" class="btn-quiet" type="button">ホームに戻る</button>
+      </div>
     </section>
 
     <!-- 結果画面 -->

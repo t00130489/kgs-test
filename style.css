@@ -612,6 +612,30 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 #nextBtn { margin-top: 1rem; }
  #quiz-app #nextBtn { margin-bottom: 1.2rem; }
 
+/* 「次の問題へ」と「ホームに戻る」を同じ行に並べる（ホームは右揃え・控えめ） */
+.next-row {
+  display: flex;
+  align-items: stretch;   /* 高さを「次の問題へ」に揃える */
+  gap: 0.75rem;
+  margin-top: 1rem;
+  margin-bottom: 1.2rem;
+}
+#quiz-app .next-row #nextBtn {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+.btn-quiet {
+  margin-left: auto;      /* 右揃え */
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid #d0d5dd;
+  box-shadow: none;
+  font-size: 0.9rem;
+  padding: 0 0.9rem;
+  white-space: nowrap;
+}
+.btn-quiet:hover:not(:disabled) { background: #eef1f5; color: #333; }
+
 /* ページ下部の安全余白（全ページ適用） */
 main {
   padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));

@@ -43,6 +43,7 @@ const TEXT = {
     incorrectLabel: '不正解者： ',
     timeoutLabelList: 'タイムアウト',
     leaveConfirm: 'ゲームから離脱します。よろしいですか？',
+    homeConfirm: 'ホーム画面に戻ります。\nこのゲームには自動で復帰しません。よろしいですか？',
     questionLabelPrefix: '第',
     questionLabelSuffix: '問'
   }
@@ -382,6 +383,7 @@ const answerInput = document.getElementById('answerInput');
 const answerBtn   = document.getElementById('answerBtn');
 const aTimerEl    = document.getElementById('answer-timer');
 const nextBtn     = document.getElementById('nextBtn');
+const homeBtn     = document.getElementById('homeBtn');
 const startBtn    = document.getElementById('startBtn');
 const choiceArea  = document.getElementById('choice-area');
 
@@ -1731,6 +1733,52 @@ window.addEventListener('pageshow', e => {
   startHeartbeat();
   resyncGameState('bfcache');
 });
+
+// =====================================================================
+// ホームに戻る（明示的な離脱）
+// 通常の退席（タブを閉じる・瞬断など）と違い、この経路で戻った場合は
+// セッションを破棄するため自動復帰も復帰カードも出さない。
+// =====================================================================
+async function leaveToHome(){
+  if (!roomId || !myNick) { location.reload(); return; }
+  if (!confirm(TEXT.labels.homeConfirm)) return;
+  const targetRoom = roomId, targetNick = myNick;
+
+  allowUnload = true;   // beforeunload の離脱確認は出さない
+  // 自動復帰の材料を先に消す（復帰カードも出さない）
+  clearSession();
+
+  // 監視・タイマーを先に止める（watchPlayers による自分のノード自動復元を防ぐ）
+  detachWatchers();
+  detachPresence();
+  clearStaleBuzzWatch();
+  clearTimers();
+  stopHeartbeat();
+
+  showLoading('ホームに戻ります...');
+  // 切断時の onDisconnect（connected:false / buzz 解放）はもう不要
+  try { onDisconnect(ref(db, `rooms/${targetRoom}/players/${targetNick}/connected`)).cancel(); } catch(_) {}
+  await releaseBuzzOnDisconnect();
+
+  // 自分が早押しを保持したままなら解放して、残った人を待たせない
+  try {
+    if (currentBuzz && currentBuzz.nick === targetNick) {
+      await runTransaction(ref(db, `rooms/${targetRoom}/buzz`), cur => {
+        if (cur && cur.nick === targetNick) return null;  // 解放
+        return;                                           // 変わっていたら中断
+      }, { applyLocally: false });
+    }
+  } catch(_) {}
+
+  // 在室リストから抜ける（全員誤答判定の分母から即座に外れる）
+  try { await remove(ref(db, `rooms/${targetRoom}/players/${targetNick}`)); } catch(_) {}
+
+  roomId = ''; myNick = '';
+  location.reload();
+}
+if (homeBtn) {
+  homeBtn.addEventListener('click', () => { leaveToHome(); });
+}
 
 // ページロード時に復帰を試行（本人だと確認できれば自動、できなければ常設カード）
 try { setTimeout(() => { tryAutoRejoin(); }, 200); } catch(_) {}
