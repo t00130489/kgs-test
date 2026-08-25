@@ -132,17 +132,30 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="icon-192.png">
   <script>
-    // SW はバージョン付き URL で登録し、activate 後に一度だけ自動リロード
+    // SW はバージョン付き URL で登録し、activate 後に一度だけ自動リロード。
+    // ただしゲーム進行中は保留し、結果画面に着いてから静かに適用する。
     (function(){
       if (!('serviceWorker' in navigator)) return;
       let reloadedForSW = false;
       try { reloadedForSW = sessionStorage.getItem('reloadedForSW') === '1'; } catch(_) {}
-      navigator.serviceWorker.addEventListener('message', event => {
-        if (!event || !event.data || event.data.type !== 'SW_ACTIVATED') return;
+      function applyUpdate(){
         if (reloadedForSW) return; // 一度だけ
         try { sessionStorage.setItem('reloadedForSW', '1'); } catch(_) {}
         // version.js, index.html は network-first なので、ここでのリロードで最新反映
         location.reload();
+      }
+      navigator.serviceWorker.addEventListener('message', event => {
+        if (!event || !event.data || event.data.type !== 'SW_ACTIVATED') return;
+        if (reloadedForSW) return;
+        var inGame = false;
+        try { inGame = !!(window.__kgsIsInGame && window.__kgsIsInGame()); } catch(_) {}
+        if (inGame) {
+          // ゲーム中は何も知らせず保留する。結果画面の「トップページに戻る」で
+          // location.reload() が走るので、そこで自然に新しい版へ切り替わる。
+          window.__kgsPendingReload = true;
+          return;
+        }
+        applyUpdate();
       });
       window.addEventListener('load', function() {
         const v = (window.APP_VERSION || '0');
@@ -178,6 +191,7 @@
               <span class="custom-checkbox wide grad-margin"><input type="checkbox" id="grad-range"><label for="grad-range">大学院の範囲</label></span>
               <span class="custom-checkbox wide"><input type="checkbox" id="all-range"><label for="all-range">全範囲</label></span>
             </div>
+            <div id="range-total" class="range-total"></div>
           </div>
         </div>
   <div class="form-row mode-row" style="margin-bottom:1.7em;">

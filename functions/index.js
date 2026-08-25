@@ -8,6 +8,31 @@ const { onRequest } = require("firebase-functions/v2/https");
 
 admin.initializeApp();
 const db = admin.database();
+// 万一 undefined が混ざっても書き込みを落とさない（保険）
+try { admin.firestore().settings({ ignoreUndefinedProperties: true }); } catch (e) { /* 既に設定済み */ }
+
+/**
+ * RTDB の戻り値をプレーンオブジェクトに正規化する。
+ *
+ * ニックネームが "1" のように数字だけだと、RTDB は {"1":2} ではなく
+ * 穴あき配列 [undefined, 2] を返す。そのまま Firestore に渡すと
+ * 「Cannot use "undefined" as a Firestore value」で書き込みが失敗し、
+ * しかも add() は同期的に throw するため Promise.allSettled では捕まらない。
+ */
+function toPlainObject(v) {
+  if (!v || typeof v !== 'object') return {};
+  if (!Array.isArray(v)) return v;
+  const o = {};
+  v.forEach((x, i) => { if (x !== undefined && x !== null) o[String(i)] = x; });
+  return o;
+}
+
+/** 配列にも穴あき配列にもなり得るノードを、詰めた配列にする */
+function toDenseArray(v) {
+  if (!v) return [];
+  const arr = Array.isArray(v) ? v : Object.values(v);
+  return arr.filter(x => x !== undefined && x !== null);
+}
 
 /**
  * 参加者一覧を players と scores の和集合から作る。
@@ -16,10 +41,96 @@ const db = admin.database();
  */
 function mergeParticipants(players, scores) {
   const set = new Set([
-    ...Object.keys(players || {}),
-    ...Object.keys(scores || {})
+    ...Object.keys(toPlainObject(players)),
+    ...Object.keys(toPlainObject(scores))
   ]);
   return Array.from(set).sort();
+}
+
+/** 問題の安定ID。章と問番号の組は問題バンク全670問で一意であることを確認済み。 */
+function questionKey(q) {
+  if (!q) return null;
+  const ch = q.chapter, qn = q.qnum;
+  if (ch === undefined || ch === null || qn === undefined || qn === null) return null;
+  return `${ch}-${qn}`;
+}
+
+/**
+ * 1試合ぶんの events を問題単位に畳む。
+ * ログを軽く保つため問題文そのものは持たせず、集計側 (questionStats) に置く。
+ */
+function summariseQuestions(sequence, eventsObj, qStartObj, askedCount) {
+  const events = toDenseArray(eventsObj);
+  const qStart = toPlainObject(qStartObj);
+  const byIndex = new Map();
+  events.forEach(e => {
+    const i = Number(e && e.questionIndex);
+    if (!Number.isFinite(i)) return;
+    if (!byIndex.has(i)) byIndex.set(i, []);
+    byIndex.get(i).push(e);
+  });
+
+  const out = [];
+  for (let i = 0; i < Math.min(askedCount, sequence.length); i++) {
+    const q = sequence[i];
+    if (!q) continue;
+    const evs = (byIndex.get(i) || []).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const correct = evs.find(e => e.correct);
+    const wrong = evs.filter(e => !e.correct && e.type === 'wrongGuess').length;
+    const timeout = evs.filter(e => !e.correct && e.type === 'answerTimeout').length;
+    const startAt = Number(qStart[String(i)] ?? qStart[i]);
+    let ms = null;
+    if (correct && Number.isFinite(startAt) && Number.isFinite(Number(correct.timestamp))) {
+      const d = Number(correct.timestamp) - startAt;
+      if (d >= 0 && d < 10 * 60 * 1000) ms = d;
+    }
+    out.push({
+      i,
+      id: questionKey(q) || `idx-${i}`,
+      chapter: Number(q.chapter),
+      winner: correct ? String(correct.nick) : null,
+      wrong,
+      timeout,
+      // 誰も反応しないまま制限時間が切れた問題（イベントが1件も無い）
+      unanswered: evs.length === 0,
+      ms
+    });
+  }
+  return out;
+}
+
+/**
+ * 問題ごとの累積成績を questionStats に足しこむ。
+ * 全ログを走査せずに「難問ランキング」を出せるようにするための集計。
+ */
+async function accumulateQuestionStats(firestore, sequence, summaries) {
+  if (!summaries.length) return;
+  const CHUNK = 400; // batch の上限500に対する余裕
+  for (let s = 0; s < summaries.length; s += CHUNK) {
+    const slice = summaries.slice(s, s + CHUNK);
+    const batch = firestore.batch();
+    slice.forEach(item => {
+      const q = sequence[item.i] || {};
+      const ref = firestore.collection('questionStats').doc(item.id);
+      const inc = admin.firestore.FieldValue.increment;
+      batch.set(ref, {
+        id: item.id,
+        chapter: Number(q.chapter),
+        qnum: Number(q.qnum),
+        question: String(q.question || ''),
+        answer: String(q.answer || ''),
+        asked: inc(1),
+        correct: inc(item.winner ? 1 : 0),
+        wrong: inc(item.wrong),
+        timeout: inc(item.timeout),
+        unanswered: inc(item.unanswered ? 1 : 0),
+        totalMs: inc(item.ms || 0),
+        msCount: inc(item.ms == null ? 0 : 1),
+        lastAskedAt: Date.now()
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
 }
 
 /**
@@ -35,6 +146,7 @@ function mergeParticipants(players, scores) {
 const CLEANUP_BATCH_SIZE = 50;
 const CLEANUP_MAX_BATCHES = 200;
 const CLEANUP_DEADLINE_MS = 240 * 1000; // timeoutSeconds に対する安全マージン
+const STALE_ROOM_MS = 2 * 60 * 60 * 1000;  // これを超えたルームは「進行中」として扱わない
 
 exports.scheduledCleanupRooms = onSchedule(
   {
@@ -85,25 +197,37 @@ exports.scheduledCleanupRooms = onSchedule(
 
         // finishedAtが存在しない（終了印がない）場合は途中終了とみなす
         if (!settings.finishedAt) {
-          // sequence は件数だけ取り、本体はメモリに残さない
+          const sequence = toDenseArray(roomSnap.child("sequence").val());
+          const currentQuestion = roomSnap.child("currentIndex").val() || 0;
+          const questions = summariseQuestions(
+            sequence,
+            roomSnap.child("events").val(),
+            roomSnap.child("qStart").val(),
+            currentQuestion + 1
+          );
           logEntries.push({
-            roomId: roomSnap.key,
-            host: settings.host || '',
-            participants: mergeParticipants(
-              roomSnap.child("players").val(),
-              roomSnap.child("scores").val()
-            ),
-            winners: [],
-            scores: roomSnap.child("scores").val() || {},
-            questionsCount: roomSnap.child("sequence").numChildren() || settings.count || 0,
-            mode: settings.mode || 'input',
-            chapters: settings.chapters || [],
-            duration: Date.now() - (createdAt || Date.now()),
-            createdAt: createdAt || Date.now(),
-            finishedAt: Date.now(),
-            status: 'incomplete',
-            currentQuestion: roomSnap.child("currentIndex").val() || 0,
-            savedAt: admin.firestore.FieldValue.serverTimestamp()
+            entry: {
+              roomId: roomSnap.key,
+              host: settings.host || '',
+              participants: mergeParticipants(
+                roomSnap.child("players").val(),
+                roomSnap.child("scores").val()
+              ),
+              winners: [],
+              scores: toPlainObject(roomSnap.child("scores").val()),
+              questionsCount: sequence.length || settings.count || 0,
+              mode: settings.mode || 'input',
+              chapters: settings.chapters || [],
+              duration: Date.now() - (createdAt || Date.now()),
+              createdAt: createdAt || Date.now(),
+              finishedAt: Date.now(),
+              status: 'incomplete',
+              currentQuestion,
+              questions,
+              savedAt: admin.firestore.FieldValue.serverTimestamp()
+            },
+            sequence,
+            questions
           });
         }
       });
@@ -118,15 +242,22 @@ exports.scheduledCleanupRooms = onSchedule(
       await roomsRef.update(updates);
       deletedTotal += Object.keys(updates).length;
 
-      // ログ保存は best-effort（失敗しても削除は巻き戻さない）
-      if (logEntries.length) {
-        const results = await Promise.allSettled(
-          logEntries.map(entry => firestore.collection('gameLogs').add(entry))
-        );
-        results.forEach(r => {
-          if (r.status === 'fulfilled') loggedTotal++;
-          else console.error('cleanup: gameLog save failed', r.reason);
-        });
+      // ログ保存は best-effort（失敗しても削除は巻き戻さない）。
+      // add() は引数検証で同期的に throw するため、1件ずつ囲まないと
+      // 1つの不正データでバッチ全体（＝以降の全ルーム）が落ちる。
+      for (const item of logEntries) {
+        try {
+          await firestore.collection('gameLogs').add(item.entry);
+          loggedTotal++;
+        } catch (e) {
+          console.error('cleanup: gameLog save failed', item.entry && item.entry.roomId, e);
+          continue;
+        }
+        try {
+          await accumulateQuestionStats(firestore, item.sequence, item.questions);
+        } catch (e) {
+          console.error('cleanup: questionStats failed', item.entry && item.entry.roomId, e);
+        }
       }
     }
 
@@ -149,10 +280,10 @@ exports.onRoomFinished = onValueCreated(
       if (!roomData) return;
 
       const settings = roomData.settings || {};
-      const scores = roomData.scores || {};
-      const players = roomData.players || {};
-      const sequence = roomData.sequence || [];
-      
+      const scores = toPlainObject(roomData.scores);
+      const players = toPlainObject(roomData.players);
+      const sequence = toDenseArray(roomData.sequence);
+
       const scoreValues = Object.values(scores).map(v => v || 0);
       const maxScore = scoreValues.length ? Math.max(...scoreValues) : 0;
       const winners = maxScore > 0
@@ -172,11 +303,17 @@ exports.onRoomFinished = onValueCreated(
         createdAt: settings.createdAt || Date.now(),
         finishedAt: settings.finishedAt || Date.now(),
         status: 'finished',
+        questions: summariseQuestions(sequence, roomData.events, roomData.qStart, sequence.length),
         savedAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
       const firestore = admin.firestore();
       await firestore.collection('gameLogs').add(logEntry);
+      try {
+        await accumulateQuestionStats(firestore, sequence, logEntry.questions);
+      } catch (e) {
+        console.error('onRoomFinished questionStats error', roomId, e);
+      }
     } catch (e) {
       console.error('onRoomFinished error', e);
     }
@@ -223,6 +360,21 @@ exports.onCorrectEvent = onValueCreated(
  * 質問データ取得の最適化: 指定章+件数でシーケンスを生成し返すHTTP関数。
  * Body(JSON): { chapters: number[], count: number, mode?: 'input'|'select' }
  */
+// 問題バンクのキャッシュ。内容の更新は年に数回なので、
+// ウォームインスタンスでは24時間使い回す（作成のたびに182KBを読むのをやめる）。
+const QUESTION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+let questionCache = { at: 0, items: null };
+async function getQuestions() {
+  const now = Date.now();
+  if (questionCache.items && (now - questionCache.at) < QUESTION_CACHE_TTL_MS) {
+    return questionCache.items;
+  }
+  const snap = await db.ref('questions').once('value');
+  const items = toDenseArray(snap.val());
+  questionCache = { at: now, items };
+  return items;
+}
+
 exports.generateSequence = onRequest({ region: "us-central1" }, async (req, res) => {
   // CORS簡易対応
   res.set("Access-Control-Allow-Origin", "*");
@@ -238,8 +390,7 @@ exports.generateSequence = onRequest({ region: "us-central1" }, async (req, res)
     if (!Number.isFinite(cnt) || cnt < 1 || cnt > 999) return res.status(400).json({ error: 'invalid count' });
     const isSelect = mode === 'select';
 
-    const snap = await db.ref('questions').once('value');
-    const all = Object.values(snap.val() || {}).filter(Boolean);
+    const all = await getQuestions();
     const pool = all.filter(q => chs.includes(Number(q.chapter)));
     // Fisher-Yates shuffle
     for (let i = pool.length - 1; i > 0; i--) {
@@ -265,59 +416,67 @@ exports.generateSequence = onRequest({ region: "us-central1" }, async (req, res)
 });
 
 /**
- * ゲームログ保存: クライアントからゲーム終了のログを受け取ってFirestoreに保存
- * Body(JSON): { roomId, participants, winners, scores, questionsCount, mode, chapters, duration, createdAt, finishedAt }
+ * 章ごとの問題数を返す。出題範囲を選んだ時点で「問題総数：○○問」を出すため。
+ * 問題バンク全件をクライアントに落とさずに済む。
  */
-exports.saveGameLog = onRequest({ region: "us-central1" }, async (req, res) => {
-  // CORS対応
+exports.getQuestionCounts = onRequest({ region: "us-central1" }, async (req, res) => {
   res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
   if (req.method === 'OPTIONS') return res.status(204).send('');
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   try {
-    const {
-      roomId,
-      host,
-      participants,
-      winners,
-      scores,
-      questionsCount,
-      mode,
-      chapters,
-      duration,
-      createdAt,
-      finishedAt,
-      status
-    } = req.body || {};
-
-    if (!roomId || !participants || !Array.isArray(participants)) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const logEntry = {
-      roomId,
-      host: host || '',
-      participants: Array.isArray(participants) ? participants : [],
-      winners: Array.isArray(winners) ? winners : [],
-      scores: scores || {},
-      questionsCount: Number(questionsCount) || 0,
-      mode: mode || 'input',
-      chapters: Array.isArray(chapters) ? chapters : [],
-      duration: Number(duration) || 0,
-      createdAt: Number(createdAt) || Date.now(),
-      finishedAt: Number(finishedAt) || Date.now(),
-      status: status || 'finished',
-      savedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-
-    // Firestoreに保存
-    const firestore = admin.firestore();
-    const docRef = await firestore.collection('gameLogs').add(logEntry);
-
-    return res.json({ success: true, logId: docRef.id });
+    const all = await getQuestions();
+    const counts = {};
+    all.forEach(q => {
+      const c = Number(q.chapter);
+      if (Number.isFinite(c)) counts[c] = (counts[c] || 0) + 1;
+    });
+    res.set("Cache-Control", "public, max-age=3600");
+    return res.json({ counts, total: all.length });
   } catch (e) {
-    console.error('saveGameLog error', e);
+    console.error('getQuestionCounts error', e);
+    return res.status(500).json({ error: 'internal' });
+  }
+});
+
+/**
+ * 問題ごとの累積成績を返す。ログ画面の「問題別成績」用。
+ * questionStats はゲーム終了時に加算されていくので、全ログを走査しなくてよい。
+ */
+exports.getQuestionStats = onRequest({ region: "us-central1" }, async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  try {
+    const limit = Math.min(Number(req.query.limit) || 1000, 2000);
+    const snapshot = await admin.firestore()
+      .collection('questionStats')
+      .orderBy('asked', 'desc')
+      .limit(limit)
+      .get();
+    const stats = [];
+    snapshot.forEach(doc => {
+      const d = doc.data() || {};
+      const asked = d.asked || 0;
+      const correct = d.correct || 0;
+      stats.push({
+        id: doc.id,
+        chapter: d.chapter,
+        qnum: d.qnum,
+        question: d.question || '',
+        answer: d.answer || '',
+        asked,
+        correct,
+        wrong: d.wrong || 0,
+        timeout: d.timeout || 0,
+        unanswered: d.unanswered || 0,
+        correctRate: asked ? correct / asked : null,
+        avgMs: d.msCount ? Math.round((d.totalMs || 0) / d.msCount) : null,
+        lastAskedAt: d.lastAskedAt || null
+      });
+    });
+    return res.json({ stats });
+  } catch (e) {
+    console.error('getQuestionStats error', e);
     return res.status(500).json({ error: 'internal' });
   }
 });
@@ -365,8 +524,11 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
     rtdbSnap.forEach(roomSnap => {
       const settings = roomSnap.child('settings').val() || {};
 
-      // finishedAtが存在しないものは進行中
-      if (!settings.finishedAt) {
+      // finishedAt が無くても、作成から2時間以上経っていれば放置ルーム。
+      // クリーンアップ待ちのものを「進行中」として並べない。
+      const createdAt = settings.createdAt || 0;
+      const stale = !createdAt || (Date.now() - createdAt) > STALE_ROOM_MS;
+      if (!settings.finishedAt && !stale) {
         logs.push({
           id: roomSnap.key,
           roomId: roomSnap.key,
@@ -376,13 +538,14 @@ exports.getGameLogs = onRequest({ region: "us-central1" }, async (req, res) => {
             roomSnap.child('scores').val()
           ),
           winners: [],
-          scores: roomSnap.child('scores').val() || {},
+          scores: toPlainObject(roomSnap.child('scores').val()),
           questionsCount: roomSnap.child('sequence').numChildren() || settings.count || 0,
           mode: settings.mode || 'input',
           chapters: settings.chapters || [],
           duration: Date.now() - (settings.createdAt || Date.now()),
           createdAt: settings.createdAt || Date.now(),
-          finishedAt: Date.now(), // ソート用
+          finishedAt: null,
+          sortAt: Date.now(), // 並べ替え用（終了時刻ではない）
           status: 'in-progress',
           currentQuestion: roomSnap.child('currentIndex').val() || 0,
           savedAt: Date.now()

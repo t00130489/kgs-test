@@ -1070,3 +1070,33 @@ main {
   color: #8a3d3d;
   background: #f3e0e0;
 }
+
+/* --- 接続断のインジケータ --- */
+.offline-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 3000;
+  background: #b3261e;
+  color: #fff;
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 0.45rem 0.8rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* --- 出題範囲の問題総数キャプション --- */
+.range-total {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: #666;
+  text-align: right;
+}
+
+/* --- 結果画面：自分の回答と章別成績 --- */
+.result-question-card li.my-result {
+  font-weight: bold;
+  color: var(--primary, #004ea2);
+}
+.chapter-breakdown {
+  margin: 0.2rem 0 1rem;
+}

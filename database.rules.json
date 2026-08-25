@@ -14,7 +14,7 @@
           ".read": true,
           "$nick": {
             ".write": "!newData.exists() || !data.exists() || !data.hasChild('clientId') || data.child('clientId').val() === newData.child('clientId').val()",
-            ".validate": "!newData.exists() || (newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber() && (!newData.hasChild('clientId') || newData.child('clientId').isString()) && (!newData.hasChild('connected') || newData.child('connected').isBoolean()) && (!data.exists() || newData.child('joinedAt').val() === data.child('joinedAt').val()))",
+            ".validate": "$nick.length >= 1 && $nick.length <= 32 && (!newData.exists() || (newData.hasChildren(['joinedAt','lastActive']) && newData.child('joinedAt').isNumber() && newData.child('lastActive').isNumber() && (!newData.hasChild('clientId') || newData.child('clientId').isString()) && (!newData.hasChild('connected') || newData.child('connected').isBoolean()) && (!data.exists() || newData.child('joinedAt').val() === data.child('joinedAt').val())))",
             "connected": { ".validate": "newData.isBoolean() && newData.parent().hasChild('joinedAt')" },
             "lastActive": { ".validate": "newData.isNumber() && newData.parent().hasChild('joinedAt')" }
           }
@@ -56,7 +56,7 @@
           ".write": "!newData.exists()",
           "$questionIndex": {
             ".write": true,
-            ".validate": "!newData.exists() || newData.isNumber()"
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() > 0)"
           }
         }
       }

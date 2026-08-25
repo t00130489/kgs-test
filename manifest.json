@@ -1,13 +1,17 @@
 {
+  "id": "/",
   "name": "興学思想 早押しクイズバトル",
   "short_name": "興学思想クイズ",
   "start_url": "./",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f5f7fa",
-  "theme_color": "#1976d2",
+  "theme_color": "#f5f7fa",
   "description": "興学思想の早押しクイズアプリです。",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
